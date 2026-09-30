@@ -16,7 +16,7 @@ If the link shows this README instead of the app, Pages is publishing the reposi
 
 Every push to `main` updates the site. After an update that changes the bookmarklet, drag the button again to replace your old bookmark.
 
-On the hosted site, the main address always goes to the bookmarklet page; `index.html?proxy` opens the proxy version.
+The main address opens the page with the Proxy URL field; it needs the Cloudflare Worker below. The bookmarklet install page is at `bookmarklet.html`.
 
 ## Optional: the proxy version on your computer
 
