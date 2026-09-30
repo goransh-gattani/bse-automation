@@ -16,7 +16,7 @@ If the link shows this README instead of the app, Pages is publishing the reposi
 
 Every push to `main` updates the site. After an update that changes the bookmarklet, drag the button again to replace your old bookmark.
 
-On the hosted site, the address without a proxy set up goes straight to the bookmarklet page; `index.html?proxy` opens the proxy version.
+On the hosted site, the main address always goes to the bookmarklet page; `index.html?proxy` opens the proxy version.
 
 ## Optional: the proxy version on your computer
 
