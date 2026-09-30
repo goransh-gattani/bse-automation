@@ -158,16 +158,51 @@
       var td = cell(tr, "", "text-align:center;white-space:nowrap");
       var name = (row.ATTACHMENTNAME || "").trim();
       if (name) {
-        var a = el("a", "color:#1f5fbf;font-weight:600", "📄 PDF");
+        var a = el("a", "color:#1f5fbf;font-weight:600", "📄 View");
         a.href = PDF_BASE + encodeURIComponent(name);
         a.target = "_blank";
         a.rel = "noopener";
-        td.append(a);
+        var d = el("a", "color:#1f5fbf;font-weight:600;margin-left:12px", "⬇ Download");
+        d.href = a.href;
+        d.download = [row._scrip, dateOf(row).replace(/\D/g, "").slice(0, 8), name].filter(Boolean).join("_");
+        d.onclick = saveFile;
+        td.append(a, d);
       } else {
         td.textContent = "—";
       }
       table.append(tr);
     });
+  }
+
+  // Fetch the PDF (same site, so allowed) and save it under our file name;
+  // if that fails, let the link open it normally.
+  function saveFile(e) {
+    var link = e.currentTarget;
+    e.preventDefault();
+    var label = link.textContent;
+    link.textContent = "Saving…";
+    fetch(link.href)
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.blob();
+      })
+      .then(function (blob) {
+        var tmp = document.createElement("a");
+        tmp.href = URL.createObjectURL(blob);
+        tmp.download = link.download;
+        document.body.append(tmp);
+        tmp.click();
+        tmp.remove();
+        setTimeout(function () {
+          URL.revokeObjectURL(tmp.href);
+        }, 10000);
+      })
+      .catch(function () {
+        window.open(link.href, "_blank", "noopener");
+      })
+      .then(function () {
+        link.textContent = label;
+      });
   }
 
   function dateOf(row) {
@@ -226,7 +261,7 @@
       var ok = scrips.length - empty.length - failed.length;
       var parts = [
         all.length
-          ? all.length + " announcements from " + ok + " of " + scrips.length + " scrip codes (page " + page + "). Click PDF to open."
+          ? all.length + " announcements from " + ok + " of " + scrips.length + " scrip codes (page " + page + "). View opens a PDF, Download saves it."
           : "No announcements found (page " + page + ").",
       ];
       if (empty.length) parts.push("No results: " + empty.join(", ") + ".");

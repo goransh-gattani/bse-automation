@@ -14,9 +14,11 @@ import argparse
 import gzip
 import http.server
 import os
+import re
 import shutil
 import subprocess
 import urllib.error
+import urllib.parse
 import urllib.request
 import zlib
 from functools import partial
@@ -30,6 +32,8 @@ except ImportError:
 UPSTREAM = os.environ.get(
     "BSE_UPSTREAM", "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w"
 )
+PDF_BASE = os.environ.get("BSE_PDF_BASE", "https://www.bseindia.com/xml-data/corpfiling/AttachHis/")
+PDF_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.pdf$", re.IGNORECASE)
 DOCS_DIR = Path(__file__).resolve().parent.parent / "docs"
 
 # Everything Chrome sends on bseindia.com's own call to this API; BSE's CDN
@@ -175,13 +179,34 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         path, _, query = self.path.partition("?")
-        if path.rstrip("/") != "/api":
+        path = path.rstrip("/")
+        if path == "/api/pdf":
+            return self._send_pdf(query)
+        if path != "/api":
             return super().do_GET()
         status, body, ctype = fetch_upstream(UPSTREAM + ("?" + query if query else ""))
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_pdf(self, query):
+        """GET /api/pdf?name=<ATTACHMENTNAME>&filename=<save as>: BSE's PDF as a download."""
+        params = dict(urllib.parse.parse_qsl(query))
+        name = params.get("name", "")
+        if not PDF_NAME.match(name):
+            status, body, ctype = 400, b"Bad attachment name", "text/plain"
+        else:
+            status, body, ctype = fetch_upstream(PDF_BASE + name)
+        filename = params.get("filename", name)
+        filename = re.sub(r"[^A-Za-z0-9._-]", "_", filename) or "announcement.pdf"
+        self.send_response(status)
+        self.send_header("Content-Type", ctype if status != 200 else "application/pdf")
+        self.send_header("Content-Length", str(len(body)))
+        if status == 200:
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.end_headers()
         self.wfile.write(body)
 

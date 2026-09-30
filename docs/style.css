@@ -108,6 +108,7 @@ td.date, td.scrip { white-space: nowrap; }
 td.headline { min-width: 280px; }
 td.pdf { text-align: center; white-space: nowrap; }
 td.pdf a { color: var(--accent); text-decoration: none; font-weight: 600; }
+td.pdf a + a { margin-left: 12px; }
 tr.nopdf td { color: var(--muted); }
 
 main.narrow { max-width: 760px; }

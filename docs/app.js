@@ -39,6 +39,22 @@ function parseScrips(text) {
   return [...new Set(text.split(/[\s,;]+/).filter(Boolean))];
 }
 
+// Saved as <scrip>_<YYYYMMDD>_<ATTACHMENTNAME> so a folder of downloads sorts sensibly.
+function downloadName(row) {
+  const day = row.date.replace(/\D/g, "").slice(0, 8);
+  return [row.scrip, day, row.attachment].filter(Boolean).join("_");
+}
+
+// The proxy fetches the PDF and sends it back as an attachment, which the
+// browser saves instead of opening (BSE's own links only open in a tab).
+function downloadUrl(row) {
+  const proxy = $("proxy").value.trim().replace(/\/+$/, "");
+  const url = new URL(proxy + "/pdf", location.href);
+  url.searchParams.set("name", row.attachment);
+  url.searchParams.set("filename", downloadName(row));
+  return url.href;
+}
+
 function parseResponse(data) {
   if (!data || typeof data !== "object") throw new Error("Unexpected response format from BSE");
   const rows = (data.Table || []).map((row) => ({
@@ -47,6 +63,7 @@ function parseResponse(data) {
     headline: String(row.HEADLINE || row.NEWSSUB || ""),
     category: String(row.SUBCATNAME || row.CATEGORYNAME || ""),
     pdf: pdfUrl(row.ATTACHMENTNAME),
+    attachment: String(row.ATTACHMENTNAME || "").trim(),
     scrip: String(row.SCRIP_CD || ""),
   }));
   let total = rows.length;
@@ -106,12 +123,17 @@ function renderRows(rows) {
     const pdfCell = document.createElement("td");
     pdfCell.className = "pdf";
     if (row.pdf) {
-      const a = document.createElement("a");
-      a.href = row.pdf;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      a.textContent = "📄 PDF";
-      pdfCell.append(a);
+      const view = document.createElement("a");
+      view.href = row.pdf;
+      view.target = "_blank";
+      view.rel = "noopener noreferrer";
+      view.textContent = "📄 View";
+      const save = document.createElement("a");
+      save.href = downloadUrl(row);
+      save.download = downloadName(row);
+      save.className = "download";
+      save.textContent = "⬇ Download";
+      pdfCell.append(view, save);
     } else {
       pdfCell.textContent = "—";
       tr.classList.add("nopdf");
@@ -192,7 +214,7 @@ async function fetchAnnouncements() {
       notes.push("Run `python3 proxy/local_proxy.py --diag` and send its output, or use the bookmarklet version (link at the top).");
     }
     const summary = all.length
-      ? `${all.length} announcements from ${scrips.length - empty.length - failed.length} of ${scrips.length} scrip codes (page ${page}). Click PDF to open.`
+      ? `${all.length} announcements from ${scrips.length - empty.length - failed.length} of ${scrips.length} scrip codes (page ${page}). View opens a PDF, Download saves it.`
       : `No announcements found (page ${page}).`;
     setStatus([summary, ...notes].join(" "), failed.length > 0);
   } finally {

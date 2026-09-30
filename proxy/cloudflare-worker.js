@@ -5,6 +5,8 @@
 // other sites from using your worker; leave it unset to allow any origin.
 
 const UPSTREAM = "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w";
+const PDF_BASE = "https://www.bseindia.com/xml-data/corpfiling/AttachHis/";
+const PDF_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*\.pdf$/i;
 
 const UPSTREAM_HEADERS = {
   "User-Agent":
@@ -36,7 +38,10 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
     if (request.method !== "GET") return new Response("Method not allowed", { status: 405, headers: cors });
 
-    const { search } = new URL(request.url);
+    const { pathname, search, searchParams } = new URL(request.url);
+    // /pdf?name=<ATTACHMENTNAME>&filename=<save as>: the PDF as a download.
+    if (pathname.replace(/\/+$/, "").endsWith("/pdf")) return downloadPdf(searchParams, cors);
+
     let upstream;
     try {
       upstream = await fetch(UPSTREAM + search, { headers: UPSTREAM_HEADERS });
@@ -53,3 +58,19 @@ export default {
     });
   },
 };
+
+async function downloadPdf(params, cors) {
+  const name = params.get("name") || "";
+  if (!PDF_NAME.test(name)) return new Response("Bad attachment name", { status: 400, headers: cors });
+  const filename = (params.get("filename") || name).replace(/[^A-Za-z0-9._-]/g, "_");
+  let upstream;
+  try {
+    upstream = await fetch(PDF_BASE + name, { headers: UPSTREAM_HEADERS });
+  } catch (err) {
+    return new Response(`Proxy could not reach BSE: ${err}`, { status: 502, headers: cors });
+  }
+  if (!upstream.ok) return new Response(`BSE returned HTTP ${upstream.status}`, { status: upstream.status, headers: cors });
+  return new Response(upstream.body, {
+    headers: { ...cors, "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${filename}"` },
+  });
+}
