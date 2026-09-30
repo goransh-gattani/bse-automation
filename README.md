@@ -1,15 +1,24 @@
 # BSE Automation
 
-A web page that lists a company's filings from BSE's announcements API and links each filing's PDF. It is a static page (`docs/`, no build step) that can be hosted on GitHub Pages.
+Look up BSE filings for a list of scrip codes and view or download each filing's PDF (saved as `<Company name>_<YYYY-MM-DD>.pdf`). Everything is static files in `docs/`, hosted free on GitHub Pages.
 
-Browsers can't call BSE's API directly: BSE sends no CORS headers and rejects requests that don't carry a bseindia.com `Referer`. So the page talks to BSE through a small proxy. Two are included, with the same behaviour:
+BSE blocks requests that don't come from a real browser on its own site, so the main way to use this is a **bookmarklet**: a bookmark that opens the lookup panel inside a bseindia.com tab. It needs no server. A page that talks to BSE through a proxy is also included for local use.
 
-- `proxy/local_proxy.py` for testing on your own computer.
-- `proxy/cloudflare-worker.js` for the hosted page.
+## Host it on GitHub Pages (free)
 
-Both only forward to BSE's announcements endpoint, so they can't be used as an open proxy.
+1. In the repository on GitHub, open **Settings → Pages**.
+2. Under **Build and deployment**, set **Source** to *Deploy from a branch*, then **Branch** to `main` and folder `/docs`, and click **Save**.
+3. Wait a minute or two. The site is at https://goransh-gattani.github.io/bse-automation/ (the Pages settings page shows the link once it is live).
+4. Open that link and drag the **BSE Announcements** button to your bookmarks bar.
+5. Open https://www.bseindia.com/corporates/ann.html and click the bookmark.
 
-## 1. Test locally (start here)
+If the link shows this README instead of the app, Pages is publishing the repository root rather than `/docs`. The root `index.html` forwards to `docs/` so the app still opens, but setting the folder to `/docs` gives the shorter address.
+
+Every push to `main` updates the site. After an update that changes the bookmarklet, drag the button again to replace your old bookmark.
+
+On the hosted site, the address without a proxy set up goes straight to the bookmarklet page; `index.html?proxy` opens the proxy version.
+
+## Optional: the proxy version on your computer
 
 Needs Python 3.8+ and nothing else. From the repository's top folder (not `docs/`):
 
@@ -25,7 +34,7 @@ Keep that terminal open while you use the page. If the page says BSE refused the
 
 Open http://localhost:8000. The script serves the page and proxies `/api` to BSE, so the page's **Proxy URL** is already set to `/api`. Use `--port 9000` if 8000 is taken.
 
-## 2. Deploy the proxy (Cloudflare Worker)
+## Optional: the proxy version hosted (Cloudflare Worker)
 
 1. Sign in at https://dash.cloudflare.com (the free plan is enough) and go to **Workers & Pages → Create → Create Worker**.
 2. Name it (e.g. `bse-proxy`), click **Deploy**, then **Edit code**, replace the code with `proxy/cloudflare-worker.js`, and **Deploy** again.
@@ -36,12 +45,7 @@ Or with the CLI: `npx wrangler deploy proxy/cloudflare-worker.js --name bse-prox
 
 **Caveat:** BSE sometimes blocks requests from cloud and datacenter IPs, including Cloudflare's. If the worker URL returns an HTML error page or HTTP 403 while the local proxy works, BSE is blocking Cloudflare; keep using the local proxy (you can point the hosted page at it by setting its Proxy URL to `http://localhost:8000/api`).
 
-## 3. Host the page on GitHub Pages
-
-1. Merge this branch into `main`.
-2. In the repository, open **Settings → Pages**, set **Source** to *Deploy from a branch*, branch `main`, folder `/docs`, and save.
-3. After a minute the page is at `https://<your-username>.github.io/bse-automation/`.
-4. Open it, expand **Parameters**, paste the worker URL into **Proxy URL**, and press **Fetch**. The page remembers it in your browser.
+To use it, open https://goransh-gattani.github.io/bse-automation/index.html?proxy, expand **Parameters**, paste the worker URL into **Proxy URL**, and press **Fetch**. The page remembers it in your browser.
 
 ## Usage
 
