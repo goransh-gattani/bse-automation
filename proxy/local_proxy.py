@@ -201,7 +201,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         else:
             status, body, ctype = fetch_upstream(PDF_BASE + name)
         filename = params.get("filename", name)
-        filename = re.sub(r"[^A-Za-z0-9._-]", "_", filename) or "announcement.pdf"
+        filename = re.sub(r"[^A-Za-z0-9 ._()&-]", "_", filename).strip() or "announcement.pdf"
         self.send_response(status)
         self.send_header("Content-Type", ctype if status != 200 else "application/pdf")
         self.send_header("Content-Length", str(len(body)))

@@ -62,7 +62,7 @@ export default {
 async function downloadPdf(params, cors) {
   const name = params.get("name") || "";
   if (!PDF_NAME.test(name)) return new Response("Bad attachment name", { status: 400, headers: cors });
-  const filename = (params.get("filename") || name).replace(/[^A-Za-z0-9._-]/g, "_");
+  const filename = (params.get("filename") || name).replace(/[^A-Za-z0-9 ._()&-]/g, "_").trim() || "announcement.pdf";
   let upstream;
   try {
     upstream = await fetch(PDF_BASE + name, { headers: UPSTREAM_HEADERS });

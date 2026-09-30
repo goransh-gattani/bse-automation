@@ -39,10 +39,12 @@ function parseScrips(text) {
   return [...new Set(text.split(/[\s,;]+/).filter(Boolean))];
 }
 
-// Saved as <scrip>_<YYYYMMDD>_<ATTACHMENTNAME> so a folder of downloads sorts sensibly.
+// Saved as "<Company>_<YYYY-MM-DD>.pdf" (falls back to the scrip code when BSE
+// gives no company name); the browser adds " (1)" if two filings clash.
 function downloadName(row) {
-  const day = row.date.replace(/\D/g, "").slice(0, 8);
-  return [row.scrip, day, row.attachment].filter(Boolean).join("_");
+  const company = row.company.replace(/[^A-Za-z0-9 .&()-]/g, "").replace(/\s+/g, " ").trim().replace(/\.+$/, "");
+  const day = row.date.replace(/\D/g, "").slice(0, 8).replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3");
+  return [company || row.scrip, day].filter(Boolean).join("_") + ".pdf";
 }
 
 // The proxy fetches the PDF and sends it back as an attachment, which the

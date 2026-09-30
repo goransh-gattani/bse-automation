@@ -164,7 +164,7 @@
         a.rel = "noopener";
         var d = el("a", "color:#1f5fbf;font-weight:600;margin-left:12px", "⬇ Download");
         d.href = a.href;
-        d.download = [row._scrip, dateOf(row).replace(/\D/g, "").slice(0, 8), name].filter(Boolean).join("_");
+        d.download = fileName(row);
         d.onclick = saveFile;
         td.append(a, d);
       } else {
@@ -203,6 +203,17 @@
       .then(function () {
         link.textContent = label;
       });
+  }
+
+  // "<Company>_<YYYY-MM-DD>.pdf", or the scrip code when BSE gives no company name.
+  function fileName(row) {
+    var company = String(row.SLONGNAME || "")
+      .replace(/[^A-Za-z0-9 .&()-]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/\.+$/, "");
+    var day = dateOf(row).replace(/\D/g, "").slice(0, 8).replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3");
+    return [company || row._scrip, day].filter(Boolean).join("_") + ".pdf";
   }
 
   function dateOf(row) {
