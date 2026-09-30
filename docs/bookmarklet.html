@@ -8,8 +8,8 @@
 </head>
 <body>
   <main class="narrow">
-    <h1>Run it inside bseindia.com</h1>
-    <p>If BSE blocks the proxy, this runs the same lookup from a bseindia.com tab in your own browser, so BSE sees an ordinary visit. No proxy is needed.</p>
+    <h1>BSE Announcements</h1>
+    <p>Look up filings for a list of scrip codes, then view or download their PDFs. It runs inside a bseindia.com tab in your own browser, so BSE sees an ordinary visit and no server or proxy is needed. Set it up once:</p>
 
     <h2>Option A: bookmark button</h2>
     <ol>
@@ -25,7 +25,7 @@
       <li><button type="button" id="copy">Copy code</button> then paste it into the console and press Enter. Chrome may ask you to type <code>allow pasting</code> first.</li>
     </ol>
     <p id="status" role="status"></p>
-    <p><a href="./">← Back to the proxy version</a></p>
+    <p class="hint">Advanced: the <a href="index.html?proxy">proxy version</a> of the page needs <code>proxy/local_proxy.py</code> running on your computer, or a Cloudflare Worker (see the README).</p>
   </main>
   <script>
     fetch("bookmarklet.js")
