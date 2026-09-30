@@ -12,8 +12,8 @@
     <p class="hint">BSE blocking the proxy? Use the <a href="bookmarklet.html">bookmarklet version</a>, which runs inside bseindia.com.</p>
 
     <form id="fetch-form" class="toolbar">
-      <label>Scrip code
-        <input id="scrip" name="scrip" inputmode="numeric" autocomplete="off" required>
+      <label class="scrips"><span>Scrip codes <span class="hint">(paste a list: commas, spaces or one per line; Shift+Enter for a new line)</span></span>
+        <textarea id="scrip" name="scrip" rows="2" autocomplete="off" spellcheck="false" required></textarea>
       </label>
       <button type="submit" id="fetch-btn" class="primary">Fetch</button>
       <button type="button" id="prev-btn">◀ Prev page</button>
@@ -35,7 +35,7 @@
     <div class="table-wrap">
       <table>
         <thead>
-          <tr><th>Date</th><th>Company</th><th>Headline</th><th>Category</th><th>PDF</th></tr>
+          <tr><th>Scrip</th><th>Date</th><th>Company</th><th>Headline</th><th>Category</th><th>PDF</th></tr>
         </thead>
         <tbody id="rows"></tbody>
       </table>

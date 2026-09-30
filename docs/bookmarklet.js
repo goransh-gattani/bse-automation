@@ -17,7 +17,7 @@
     strType: "C",
   };
   var LABELS = {
-    strScrip: "Scrip code",
+    strScrip: "Scrip codes (commas, spaces or one per line)",
     pageno: "Page no",
     strCat: "Category",
     subcategory: "Subcategory",
@@ -68,7 +68,10 @@
   var inputs = {};
   Object.keys(LABELS).forEach(function (key) {
     var label = el("label", "display:flex;flex-direction:column;font-size:12px;color:#555", LABELS[key]);
-    var input = el("input", "padding:4px 6px;border:1px solid #bbb;border-radius:4px;width:" + (key === "subcategory" ? "150px" : "110px"));
+    var input =
+      key === "strScrip"
+        ? el("textarea", "padding:4px 6px;border:1px solid #bbb;border-radius:4px;width:300px;height:44px;font:inherit;resize:vertical")
+        : el("input", "padding:4px 6px;border:1px solid #bbb;border-radius:4px;width:" + (key === "subcategory" ? "150px" : "110px"));
     input.value = values[key];
     inputs[key] = input;
     label.append(input);
@@ -121,7 +124,60 @@
     return td;
   }
 
+  function fetchOne(scrip, params) {
+    var query = Object.assign({}, params, { strScrip: scrip });
+    return fetch(API + "?" + new URLSearchParams(query), { headers: { Accept: "application/json, text/plain, */*" } })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        var rows = (data && data.Table) || [];
+        var total = parseInt(data && data.Table1 && data.Table1[0] && data.Table1[0].ROWCNT, 10) || rows.length;
+        rows.forEach(function (row) {
+          row._scrip = String(row.SCRIP_CD || scrip);
+        });
+        return { rows: rows, total: total };
+      });
+  }
+
+  function render(rows) {
+    table.replaceChildren();
+    var hr = el("tr", "text-align:left");
+    ["Scrip", "Date", "Company", "Headline", "Category", "PDF"].forEach(function (h) {
+      hr.append(el("th", "padding:6px 10px;position:sticky;top:0;background:#f4f4f2", h));
+    });
+    table.append(hr);
+    rows.forEach(function (row) {
+      var tr = el("tr");
+      cell(tr, row._scrip, "white-space:nowrap");
+      cell(tr, row.NEWS_DT || row.DT_TM || "", "white-space:nowrap");
+      cell(tr, row.SLONGNAME || "");
+      cell(tr, row.HEADLINE || row.NEWSSUB || "");
+      cell(tr, row.SUBCATNAME || row.CATEGORYNAME || "");
+      var td = cell(tr, "", "text-align:center;white-space:nowrap");
+      var name = (row.ATTACHMENTNAME || "").trim();
+      if (name) {
+        var a = el("a", "color:#1f5fbf;font-weight:600", "📄 PDF");
+        a.href = PDF_BASE + encodeURIComponent(name);
+        a.target = "_blank";
+        a.rel = "noopener";
+        td.append(a);
+      } else {
+        td.textContent = "—";
+      }
+      table.append(tr);
+    });
+  }
+
+  function dateOf(row) {
+    return String(row.NEWS_DT || row.DT_TM || "");
+  }
+
+  var running = false;
+
   function run() {
+    if (running) return;
     var params = {};
     Object.keys(inputs).forEach(function (k) {
       params[k] = inputs[k].value.trim();
@@ -129,49 +185,56 @@
     try {
       localStorage.setItem(KEY, JSON.stringify(params));
     } catch (e) {}
+    var scrips = params.strScrip.split(/[\s,;]+/).filter(function (c, i, all) {
+      return c && all.indexOf(c) === i;
+    });
+    delete params.strScrip;
+    if (!scrips.length) {
+      status.style.color = "#b3261e";
+      status.textContent = "Enter at least one scrip code.";
+      return;
+    }
+    var page = parseInt(params.pageno, 10) || 1;
+    var all = [], empty = [], more = [], failed = [];
+    running = true;
     status.style.color = "#555";
-    status.textContent = "Fetching announcements for " + params.strScrip + "…";
     table.replaceChildren();
-    fetch(API + "?" + new URLSearchParams(params), { headers: { Accept: "application/json, text/plain, */*" } })
-      .then(function (r) {
-        if (!r.ok) throw new Error("BSE returned HTTP " + r.status);
-        return r.json();
-      })
-      .then(function (data) {
-        var rows = (data && data.Table) || [];
-        var total = data && data.Table1 && data.Table1[0] && data.Table1[0].ROWCNT;
-        var hr = el("tr", "background:#f4f4f2;text-align:left");
-        ["Date", "Company", "Headline", "Category", "PDF"].forEach(function (h) {
-          hr.append(el("th", "padding:6px 10px;position:sticky;top:0;background:#f4f4f2", h));
-        });
-        table.append(hr);
-        rows.forEach(function (row) {
-          var tr = el("tr");
-          cell(tr, row.NEWS_DT || row.DT_TM || "", "white-space:nowrap");
-          cell(tr, row.SLONGNAME || "");
-          cell(tr, row.HEADLINE || row.NEWSSUB || "");
-          cell(tr, row.SUBCATNAME || row.CATEGORYNAME || "");
-          var td = cell(tr, "", "text-align:center;white-space:nowrap");
-          var name = (row.ATTACHMENTNAME || "").trim();
-          if (name) {
-            var a = el("a", "color:#1f5fbf;font-weight:600", "📄 PDF");
-            a.href = PDF_BASE + encodeURIComponent(name);
-            a.target = "_blank";
-            a.rel = "noopener";
-            td.append(a);
-          } else {
-            td.textContent = "—";
+
+    // One code at a time, so a long list doesn't look like a burst to BSE.
+    var chain = Promise.resolve();
+    scrips.forEach(function (scrip, i) {
+      chain = chain.then(function () {
+        status.textContent = "Fetching " + (i + 1) + " of " + scrips.length + " (" + scrip + ")…";
+        return fetchOne(scrip, params).then(
+          function (res) {
+            if (!res.rows.length) empty.push(scrip);
+            if (res.rows.length && page * res.rows.length < res.total) more.push(scrip);
+            all = all.concat(res.rows);
+            all.sort(function (a, b) {
+              return dateOf(b).localeCompare(dateOf(a));
+            });
+            render(all);
+          },
+          function (err) {
+            failed.push(scrip + " (" + err.message + ")");
           }
-          table.append(tr);
-        });
-        status.textContent = rows.length
-          ? rows.length + " results on page " + params.pageno + " (" + (total || rows.length) + " total). Click PDF to open."
-          : "No announcements found (page " + params.pageno + ").";
-      })
-      .catch(function (err) {
-        status.style.color = "#b3261e";
-        status.textContent = "Error: " + err.message;
+        );
       });
+    });
+    chain.then(function () {
+      running = false;
+      var ok = scrips.length - empty.length - failed.length;
+      var parts = [
+        all.length
+          ? all.length + " announcements from " + ok + " of " + scrips.length + " scrip codes (page " + page + "). Click PDF to open."
+          : "No announcements found (page " + page + ").",
+      ];
+      if (empty.length) parts.push("No results: " + empty.join(", ") + ".");
+      if (more.length) parts.push("More pages for: " + more.join(", ") + ".");
+      if (failed.length) parts.push("Failed: " + failed.join("; ") + ".");
+      status.style.color = failed.length ? "#b3261e" : "#555";
+      status.textContent = parts.join(" ");
+    });
   }
 
   run();

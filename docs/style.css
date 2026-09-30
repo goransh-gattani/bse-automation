@@ -64,7 +64,18 @@ button:disabled { opacity: 0.6; cursor: progress; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 
 .toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
-.toolbar #scrip { width: 9rem; font-size: 1.05rem; }
+textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  resize: vertical;
+}
+.toolbar .scrips { flex: 1 1 320px; max-width: 560px; }
+.toolbar .scrips .hint { display: inline; margin: 0; }
+.toolbar #scrip { width: 100%; font-size: 1.05rem; min-height: 2.4rem; }
 
 details {
   margin: 12px 0;
@@ -93,7 +104,7 @@ th, td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom
 th { font-size: 0.85rem; color: var(--muted); font-weight: 600; white-space: nowrap; }
 tbody tr:hover { background: var(--row-hover); }
 tbody tr:last-child td { border-bottom: none; }
-td.date { white-space: nowrap; }
+td.date, td.scrip { white-space: nowrap; }
 td.headline { min-width: 280px; }
 td.pdf { text-align: center; white-space: nowrap; }
 td.pdf a { color: var(--accent); text-decoration: none; font-weight: 600; }

@@ -34,6 +34,11 @@ function pdfUrl(attachment) {
   return attachment ? PDF_BASE_URL + encodeURIComponent(attachment) : "";
 }
 
+// Accepts codes separated by newlines, commas, semicolons or spaces; drops duplicates.
+function parseScrips(text) {
+  return [...new Set(text.split(/[\s,;]+/).filter(Boolean))];
+}
+
 function parseResponse(data) {
   if (!data || typeof data !== "object") throw new Error("Unexpected response format from BSE");
   const rows = (data.Table || []).map((row) => ({
@@ -42,6 +47,7 @@ function parseResponse(data) {
     headline: String(row.HEADLINE || row.NEWSSUB || ""),
     category: String(row.SUBCATNAME || row.CATEGORYNAME || ""),
     pdf: pdfUrl(row.ATTACHMENTNAME),
+    scrip: String(row.SCRIP_CD || ""),
   }));
   let total = rows.length;
   const table1 = data.Table1 || [];
@@ -91,7 +97,7 @@ function renderRows(rows) {
   tbody.replaceChildren();
   for (const row of rows) {
     const tr = document.createElement("tr");
-    for (const key of ["date", "company", "headline", "category"]) {
+    for (const key of ["scrip", "date", "company", "headline", "category"]) {
       const td = document.createElement("td");
       td.textContent = row[key];
       td.className = key;
@@ -117,52 +123,78 @@ function renderRows(rows) {
 
 let busy = false;
 
+async function fetchScrip(proxy, scrip, params) {
+  const url = new URL(proxy, location.href);
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+  url.searchParams.set("strScrip", scrip);
+  let resp;
+  try {
+    resp = await fetch(url, { headers: { Accept: "application/json" } });
+  } catch (e) {
+    throw new Error(`Could not reach the proxy at ${url.origin} (is it running?)`);
+  }
+  const text = await resp.text();
+  if (resp.status === 403) throw new Error("BSE refused the request (HTTP 403)");
+  if (!resp.ok) throw new Error(`BSE returned HTTP ${resp.status}: ${text.slice(0, 200)}`);
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    throw new Error("BSE did not return JSON (the request may have been blocked)");
+  }
+  const result = parseResponse(data);
+  for (const row of result.rows) row.scrip = row.scrip || scrip;
+  return result;
+}
+
 async function fetchAnnouncements() {
   if (busy) return;
-  const scrip = $("scrip").value.trim();
+  const scrips = parseScrips($("scrip").value);
   const proxy = $("proxy").value.trim();
-  if (!scrip) return setStatus("Enter a scrip code.", true);
+  if (!scrips.length) return setStatus("Enter at least one scrip code.", true);
   if (!proxy) {
     $("params-panel").open = true;
     $("proxy").focus();
     return setStatus("Set the Proxy URL first (see the README).", true);
   }
   saveSettings();
-
-  const url = new URL(proxy, location.href);
   const params = currentParams();
-  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
-  url.searchParams.set("strScrip", scrip);
+  const page = parseInt(params.pageno, 10) || 1;
 
   busy = true;
   $("fetch-btn").disabled = true;
-  setStatus(`Fetching announcements for ${scrip}…`);
+  renderRows([]);
+  const all = [];
+  const empty = [];
+  const morePages = [];
+  const failed = [];
   try {
-    const resp = await fetch(url, { headers: { Accept: "application/json" } });
-    const text = await resp.text();
-    if (resp.status === 403) {
-      throw new Error(
-        "BSE refused the request (HTTP 403). Run `python3 proxy/local_proxy.py --diag` and send its output, or use the bookmarklet version (link at the top)."
-      );
+    // One at a time, so a long list doesn't look like a burst to BSE.
+    for (const [i, scrip] of scrips.entries()) {
+      setStatus(`Fetching ${i + 1} of ${scrips.length} (${scrip})…`);
+      try {
+        const { rows, total } = await fetchScrip(proxy, scrip, params);
+        if (!rows.length) empty.push(scrip);
+        if (rows.length && page * rows.length < total) morePages.push(scrip);
+        all.push(...rows);
+        all.sort((a, b) => b.date.localeCompare(a.date));
+        renderRows(all);
+      } catch (err) {
+        failed.push(`${scrip} (${err.message})`);
+        if (err.message.includes("proxy") || err.message.includes("403")) break;
+      }
     }
-    if (!resp.ok) throw new Error(`BSE returned HTTP ${resp.status}: ${text.slice(0, 200)}`);
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch (e) {
-      throw new Error("BSE did not return JSON (the request may have been blocked)");
+    const notes = [];
+    if (empty.length) notes.push(`No results: ${empty.join(", ")}.`);
+    if (morePages.length) notes.push(`More pages for: ${morePages.join(", ")}.`);
+    if (failed.length) notes.push(`Failed: ${failed.join("; ")}.`);
+    if (failed.some((f) => f.includes("403"))) {
+      notes.push("Run `python3 proxy/local_proxy.py --diag` and send its output, or use the bookmarklet version (link at the top).");
     }
-    const { rows, total } = parseResponse(data);
-    renderRows(rows);
-    setStatus(
-      rows.length
-        ? `${rows.length} results on page ${params.pageno} (${total} total). Click PDF to open.`
-        : `No announcements found (page ${params.pageno}).`
-    );
-  } catch (err) {
-    renderRows([]);
-    const msg = err instanceof TypeError ? `Could not reach the proxy at ${url.origin} (is it running?)` : err.message;
-    setStatus("Error: " + msg, true);
+    const summary = all.length
+      ? `${all.length} announcements from ${scrips.length - empty.length - failed.length} of ${scrips.length} scrip codes (page ${page}). Click PDF to open.`
+      : `No announcements found (page ${page}).`;
+    setStatus([summary, ...notes].join(" "), failed.length > 0);
   } finally {
     busy = false;
     $("fetch-btn").disabled = false;
@@ -199,6 +231,13 @@ function init() {
   $("reset-btn").addEventListener("click", () => {
     for (const [key, input] of Object.entries(paramInputs)) input.value = DEFAULT_PARAMS[key];
     saveSettings();
+  });
+  $("scrip").addEventListener("keydown", (e) => {
+    // Enter fetches; Shift+Enter adds a new line for another code.
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      fetchAnnouncements();
+    }
   });
   $("scrip").focus();
 }

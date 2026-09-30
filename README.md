@@ -45,7 +45,7 @@ Or with the CLI: `npx wrangler deploy proxy/cloudflare-worker.js --name bse-prox
 
 ## Usage
 
-1. Type the company's scrip code (e.g. `532942`) and press **Fetch** or Enter.
+1. Type or paste one or more scrip codes (e.g. `532942, 500325`, or one per line) and press **Fetch** or Enter. With several codes the page fetches them one after another and shows one combined table, newest first, with a **Scrip** column. The status line lists codes with no results, codes that have more pages, and codes that failed.
 2. The table lists date, company, headline and category for each announcement.
 3. Click **📄 PDF** to open `https://www.bseindia.com/xml-data/corpfiling/AttachHis/<ATTACHMENTNAME>` in a new tab. Rows without an attachment show `—`.
 
