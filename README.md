@@ -11,11 +11,13 @@ Both only forward to BSE's announcements endpoint, so they can't be used as an o
 
 ## 1. Test locally (start here)
 
-Needs Python 3.8+ and nothing else.
+Needs Python 3.8+ and nothing else. From the repository's top folder (not `docs/`):
 
 ```bash
-python proxy/local_proxy.py
+python3 proxy/local_proxy.py
 ```
+
+Keep that terminal open while you use the page. Don't run `docs/app.js` with Node; it is browser code that the page loads itself.
 
 Open http://localhost:8000. The script serves the page and proxies `/api` to BSE, so the page's **Proxy URL** is already set to `/api`. Use `--port 9000` if 8000 is taken.
 
