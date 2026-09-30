@@ -98,3 +98,19 @@ td.headline { min-width: 280px; }
 td.pdf { text-align: center; white-space: nowrap; }
 td.pdf a { color: var(--accent); text-decoration: none; font-weight: 600; }
 tr.nopdf td { color: var(--muted); }
+
+main.narrow { max-width: 760px; }
+h2 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
+li { margin: 6px 0; }
+a { color: var(--accent); }
+kbd { font: 0.8rem ui-monospace, monospace; border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; background: var(--surface); }
+a.bookmarklet {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-text);
+  text-decoration: none;
+  font-weight: 600;
+  cursor: grab;
+}

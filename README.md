@@ -17,7 +17,11 @@ Needs Python 3.8+ and nothing else. From the repository's top folder (not `docs/
 python3 proxy/local_proxy.py
 ```
 
-Keep that terminal open while you use the page. If the page says BSE refused the request (HTTP 403), run `python3 -m pip install curl_cffi` and start the proxy again; it then makes its requests look like Chrome, which BSE's CDN checks for. Don't run `docs/app.js` with Node; it is browser code that the page loads itself.
+Keep that terminal open while you use the page. If the page says BSE refused the request (HTTP 403):
+
+1. `python3 -m pip install curl_cffi` and start the proxy again. It then makes its requests look like Chrome (and warms up cookies from bseindia.com), which BSE's CDN checks for.
+2. Still 403? `python3 proxy/local_proxy.py --diag` tries every way of reaching BSE and prints what each got back.
+3. Or skip the proxy: open http://localhost:8000/bookmarklet.html and use the bookmarklet, which runs the same lookup from a bseindia.com tab in your own browser. Don't run `docs/app.js` with Node; it is browser code that the page loads itself.
 
 Open http://localhost:8000. The script serves the page and proxies `/api` to BSE, so the page's **Proxy URL** is already set to `/api`. Use `--port 9000` if 8000 is taken.
 

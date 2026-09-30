@@ -1,6 +1,7 @@
 """Local test server for the web app: serves docs/ and proxies /api to BSE.
 
-    python proxy/local_proxy.py            # then open http://localhost:8000
+    python3 proxy/local_proxy.py           # then open http://localhost:8000
+    python3 proxy/local_proxy.py --diag    # show how BSE answers each client
 
 Browsers can't call BSE's API directly (no CORS headers, and BSE rejects
 requests without a bseindia.com Referer), so /api forwards the query string
@@ -51,9 +52,20 @@ UPSTREAM_HEADERS = {
     "Sec-Fetch-Site": "same-site",
 }
 
+# Page whose visit sets the cookies Akamai expects on the API call.
+WARMUP_URL = os.environ.get("BSE_WARMUP", "https://www.bseindia.com/corporates/ann.html")
+
+# With curl_cffi, let its Chrome impersonation pick the User-Agent and sec-ch-*
+# headers so they match its TLS fingerprint; only add what the site adds.
+IMPERSONATE_HEADERS = {
+    "Accept": "application/json, text/plain, */*",
+    "Origin": "https://www.bseindia.com",
+    "Referer": "https://www.bseindia.com/",
+}
+
 BLOCKED_HINT = (
-    b"\n\nBSE refused the request. Install curl_cffi so the proxy can look like "
-    b"Chrome, then restart it:  python3 -m pip install curl_cffi"
+    b"\n\nBSE refused the request. Run  python3 proxy/local_proxy.py --diag  and send its output,"
+    b" or use the bookmarklet described in the README."
 )
 
 
@@ -70,40 +82,83 @@ def _via_urllib(url):
     req = urllib.request.Request(url, headers=UPSTREAM_HEADERS)
     try:
         with urllib.request.urlopen(req, timeout=20) as resp:
-            return resp.status, _decode(resp.read(), resp.headers.get("Content-Encoding")), resp.headers.get(
-                "Content-Type", "application/json"
-            )
+            return resp.status, _decode(resp.read(), resp.headers.get("Content-Encoding")), dict(resp.headers)
     except urllib.error.HTTPError as exc:
-        return exc.code, _decode(exc.read(), exc.headers.get("Content-Encoding")), exc.headers.get(
-            "Content-Type", "text/plain"
-        )
+        return exc.code, _decode(exc.read(), exc.headers.get("Content-Encoding")), dict(exc.headers)
 
 
 def _via_curl(url):
-    """The system curl has a different TLS fingerprint that BSE often accepts."""
+    """The system curl has a different TLS fingerprint that BSE sometimes accepts."""
     cmd = ["curl", "-sS", "--compressed", "-m", "20", "-w", "\n%{http_code}"]
     for key, value in UPSTREAM_HEADERS.items():
         if key != "Accept-Encoding":
             cmd += ["-H", f"{key}: {value}"]
     out = subprocess.run(cmd + [url], capture_output=True, timeout=30, check=True).stdout
     body, _, status = out.rpartition(b"\n")
-    return int(status), body, "application/json" if body.lstrip()[:1] in (b"{", b"[") else "text/html"
+    ctype = "application/json" if body.lstrip()[:1] in (b"{", b"[") else "text/html"
+    return int(status), body, {"Content-Type": ctype}
+
+
+_session = None
+
+
+def _via_curl_cffi(url, warm_up):
+    """Chrome TLS/HTTP2 impersonation; optionally visit bseindia.com first for cookies."""
+    global _session
+    if _session is None or warm_up:
+        _session = curl_requests.Session(impersonate="chrome")
+    if warm_up:
+        _session.get(WARMUP_URL, timeout=20)
+    resp = _session.get(url, headers=IMPERSONATE_HEADERS, timeout=20)
+    return resp.status_code, resp.content, dict(resp.headers)
+
+
+def strategies():
+    """(name, fetch) pairs, least-blockable first."""
+    found = []
+    if curl_requests is not None:
+        found.append(("curl_cffi", lambda url: _via_curl_cffi(url, warm_up=False)))
+        found.append(("curl_cffi+cookies", lambda url: _via_curl_cffi(url, warm_up=True)))
+    found.append(("urllib", _via_urllib))
+    if shutil.which("curl"):
+        found.append(("curl", _via_curl))
+    return found
 
 
 def fetch_upstream(url):
-    """Return (status, body, content_type) from BSE, trying the least-blockable client first."""
-    if curl_requests is not None:
-        resp = curl_requests.get(url, headers=UPSTREAM_HEADERS, impersonate="chrome", timeout=20)
-        return resp.status_code, resp.content, resp.headers.get("Content-Type", "application/json")
-    status, body, ctype = _via_urllib(url)
-    if status == 403 and shutil.which("curl"):
+    """Return (status, body, content_type) from the first strategy BSE doesn't refuse."""
+    status, body, headers = 502, b"No way to reach BSE", {}
+    for name, fetch in strategies():
         try:
-            status, body, ctype = _via_curl(url)
-        except (subprocess.SubprocessError, OSError, ValueError):
-            pass
+            status, body, headers = fetch(url)
+        except Exception as exc:  # network errors from any of the clients
+            status, body, headers = 502, f"Proxy could not reach BSE via {name}: {exc}".encode(), {}
+            continue
+        if status != 403:
+            break
     if status == 403:
         body += BLOCKED_HINT
+    ctype = next((v for k, v in headers.items() if k.lower() == "content-type"), "text/plain")
     return status, body, ctype
+
+
+def diagnose(query):
+    """Try every strategy against BSE and print what came back."""
+    url = UPSTREAM + "?" + query
+    print("URL:", url)
+    print("curl_cffi installed:", curl_requests is not None)
+    for name, fetch in strategies():
+        print(f"\n--- {name}")
+        try:
+            status, body, headers = fetch(url)
+        except Exception as exc:
+            print("  error:", repr(exc))
+            continue
+        print("  status:", status)
+        for key, value in headers.items():
+            if key.lower() in ("server", "content-type", "akamai-grn", "x-reference-error", "set-cookie", "location"):
+                print(f"  {key}: {value[:150]}")
+        print("  body:", body[:300].decode("utf-8", "replace").replace("\n", " "))
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -122,10 +177,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         path, _, query = self.path.partition("?")
         if path.rstrip("/") != "/api":
             return super().do_GET()
-        try:
-            status, body, ctype = fetch_upstream(UPSTREAM + ("?" + query if query else ""))
-        except Exception as exc:  # network errors from any of the clients
-            status, body, ctype = 502, f"Proxy could not reach BSE: {exc}".encode(), "text/plain"
+        status, body, ctype = fetch_upstream(UPSTREAM + ("?" + query if query else ""))
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -138,12 +190,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--diag", action="store_true", help="try every way of reaching BSE, print the results, and exit")
     args = parser.parse_args()
+    if args.diag:
+        return diagnose(
+            "pageno=1&strCat=Result&strPrevDate=20260630&strScrip=532942&strSearch=P"
+            "&strToDate=20260930&strType=C&subcategory=Financial+Results"
+        )
     server = http.server.ThreadingHTTPServer(
         (args.host, args.port), partial(Handler, directory=str(DOCS_DIR))
     )
-    client = "curl_cffi (Chrome impersonation)" if curl_requests else "urllib, falling back to curl"
-    print(f"Open http://localhost:{args.port}  (API proxy at /api via {client}, Ctrl+C to stop)")
+    names = ", ".join(name for name, _ in strategies())
+    print(f"Open http://localhost:{args.port}  (API proxy at /api, trying: {names}. Ctrl+C to stop)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
