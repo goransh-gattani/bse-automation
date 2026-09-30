@@ -12,6 +12,8 @@ BSE blocks requests that don't come from a real browser on its own site, so the 
 4. Open that link and drag the **BSE Announcements** button to your bookmarks bar.
 5. Open https://www.bseindia.com/corporates/ann.html and click the bookmark.
 
+If the link shows this README instead of the app, Pages is publishing the repository root rather than `/docs`. The root `index.html` forwards to `docs/` so the app still opens, but setting the folder to `/docs` gives the shorter address.
+
 Every push to `main` updates the site. After an update that changes the bookmarklet, drag the button again to replace your old bookmark.
 
 On the hosted site, the address without a proxy set up goes straight to the bookmarklet page; `index.html?proxy` opens the proxy version.
