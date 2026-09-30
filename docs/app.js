@@ -28,7 +28,7 @@ const isLocal = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
 
 // The Cloudflare Worker the hosted page uses by default (see README). A proxy
 // URL typed into the page overrides it for that browser.
-const HOSTED_PROXY = "";
+const HOSTED_PROXY = "https://bse-proxy.goransh-gattani.workers.dev";
 
 const $ = (id) => document.getElementById(id);
 const paramInputs = {};

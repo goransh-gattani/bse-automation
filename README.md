@@ -16,7 +16,7 @@ If the link shows this README instead of the app, Pages is publishing the reposi
 
 Every push to `main` updates the site. After an update that changes the bookmarklet, drag the button again to replace your old bookmark.
 
-The main address opens the page with the Proxy URL field; it needs the Cloudflare Worker below. The bookmarklet install page is at `bookmarklet.html`.
+The main address opens the lookup page, which uses the Cloudflare Worker at https://bse-proxy.goransh-gattani.workers.dev by default (`HOSTED_PROXY` in `docs/app.js`). The bookmarklet install page is at `bookmarklet.html`.
 
 ## Optional: the proxy version on your computer
 
