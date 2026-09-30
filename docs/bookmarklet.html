@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BSE Bookmarklet</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="narrow">
+    <h1>Run it inside bseindia.com</h1>
+    <p>If BSE blocks the proxy, this runs the same lookup from a bseindia.com tab in your own browser, so BSE sees an ordinary visit. No proxy is needed.</p>
+
+    <h2>Option A: bookmark button</h2>
+    <ol>
+      <li>Show your bookmarks bar (Chrome: <kbd>⌘</kbd><kbd>Shift</kbd><kbd>B</kbd>, Windows: <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>B</kbd>).</li>
+      <li>Drag this button onto the bar: <a id="bookmarklet" class="bookmarklet" href="#">BSE Announcements</a></li>
+      <li>Open <a href="https://www.bseindia.com/corporates/ann.html" target="_blank" rel="noopener">bseindia.com</a> and click the bookmark. A panel with the parameters and results table opens on top of the page.</li>
+    </ol>
+
+    <h2>Option B: paste into the console</h2>
+    <ol>
+      <li>Open <a href="https://www.bseindia.com/corporates/ann.html" target="_blank" rel="noopener">bseindia.com</a>.</li>
+      <li>Open DevTools (<kbd>⌘</kbd><kbd>Option</kbd><kbd>J</kbd> on Mac, <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>J</kbd> on Windows) and go to the Console tab.</li>
+      <li><button type="button" id="copy">Copy code</button> then paste it into the console and press Enter. Chrome may ask you to type <code>allow pasting</code> first.</li>
+    </ol>
+    <p id="status" role="status"></p>
+    <p><a href="./">← Back to the proxy version</a></p>
+  </main>
+  <script>
+    fetch("bookmarklet.js")
+      .then((r) => r.text())
+      .then((code) => {
+        document.getElementById("bookmarklet").href = "javascript:" + encodeURIComponent(code);
+        document.getElementById("copy").onclick = () =>
+          navigator.clipboard.writeText(code).then(
+            () => (document.getElementById("status").textContent = "Copied. Paste it into the console on bseindia.com."),
+            () => (document.getElementById("status").textContent = "Copy failed; open bookmarklet.js and copy it by hand.")
+          );
+      });
+  </script>
+</body>
+</html>
