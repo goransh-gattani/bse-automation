@@ -233,9 +233,9 @@ function changePage(delta) {
 
 function init() {
   const settings = loadSettings();
-  // On the hosted site with no proxy set up, the bookmarklet is the way in;
-  // "?proxy" in the URL skips this so a proxy URL can still be entered.
-  if (!isLocal && !settings.proxy && !new URLSearchParams(location.search).has("proxy")) {
+  // On the hosted site the bookmarklet is the way in, even if a proxy URL was
+  // saved earlier; "?proxy" in the URL opens this page to use a proxy.
+  if (!isLocal && !new URLSearchParams(location.search).has("proxy")) {
     location.replace("bookmarklet.html");
     return;
   }
