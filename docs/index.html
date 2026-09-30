@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BSE Announcements</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>BSE Announcements</h1>
+
+    <form id="fetch-form" class="toolbar">
+      <label>Scrip code
+        <input id="scrip" name="scrip" inputmode="numeric" autocomplete="off" required>
+      </label>
+      <button type="submit" id="fetch-btn" class="primary">Fetch</button>
+      <button type="button" id="prev-btn">◀ Prev page</button>
+      <button type="button" id="next-btn">Next page ▶</button>
+      <button type="button" id="reset-btn">Reset params</button>
+    </form>
+
+    <details id="params-panel" open>
+      <summary>Parameters</summary>
+      <div id="params" class="params"></div>
+      <label class="proxy">Proxy URL
+        <input id="proxy" placeholder="https://your-worker.workers.dev" autocomplete="off">
+      </label>
+      <p class="hint">Dates are YYYYMMDD. When this page is served by <code>proxy/local_proxy.py</code>, leave the proxy as <code>/api</code>.</p>
+    </details>
+
+    <p id="status" role="status">Enter a scrip code and press Fetch.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Date</th><th>Company</th><th>Headline</th><th>Category</th><th>PDF</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
