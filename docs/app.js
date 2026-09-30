@@ -140,6 +140,11 @@ async function fetchAnnouncements() {
   try {
     const resp = await fetch(url, { headers: { Accept: "application/json" } });
     const text = await resp.text();
+    if (resp.status === 403) {
+      throw new Error(
+        "BSE refused the request (HTTP 403). If you use the local proxy, run `python3 -m pip install curl_cffi` and restart it."
+      );
+    }
     if (!resp.ok) throw new Error(`BSE returned HTTP ${resp.status}: ${text.slice(0, 200)}`);
     let data;
     try {
