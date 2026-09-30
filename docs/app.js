@@ -26,6 +26,10 @@ const PARAM_LABELS = {
 
 const isLocal = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
 
+// The Cloudflare Worker the hosted page uses by default (see README). A proxy
+// URL typed into the page overrides it for that browser.
+const HOSTED_PROXY = "https://bse-proxy.goransh-gattani.workers.dev";
+
 const $ = (id) => document.getElementById(id);
 const paramInputs = {};
 
@@ -77,12 +81,14 @@ function parseResponse(data) {
 }
 
 function loadSettings() {
-  const settings = { scrip: "532942", params: { ...DEFAULT_PARAMS }, proxy: isLocal ? "/api" : "" };
+  const settings = { scrip: "532942", params: { ...DEFAULT_PARAMS }, proxy: isLocal ? "/api" : HOSTED_PROXY };
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
     if (saved.scrip) settings.scrip = saved.scrip;
     Object.assign(settings.params, saved.params || {});
-    if (saved.proxy) settings.proxy = saved.proxy;
+    // A saved local-proxy URL is useless on the hosted site; keep the default there.
+    const localOnly = /^\/|localhost|127\.0\.0\.1/.test(saved.proxy || "");
+    if (saved.proxy && (isLocal || !localOnly)) settings.proxy = saved.proxy;
   } catch (e) {
     // Storage blocked or corrupt: fall back to defaults.
   }
@@ -233,12 +239,6 @@ function changePage(delta) {
 
 function init() {
   const settings = loadSettings();
-  // On the hosted site the bookmarklet is the way in, even if a proxy URL was
-  // saved earlier; "?proxy" in the URL opens this page to use a proxy.
-  if (!isLocal && !new URLSearchParams(location.search).has("proxy")) {
-    location.replace("bookmarklet.html");
-    return;
-  }
   $("scrip").value = settings.scrip;
   $("proxy").value = settings.proxy;
   for (const [key, label] of Object.entries(PARAM_LABELS)) {
