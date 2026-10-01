@@ -126,3 +126,9 @@ a.bookmarklet {
   font-weight: 600;
   cursor: grab;
 }
+
+/* Sign-in (Railway version only; see docs/auth.js). */
+.auth-pending main { display: none; }
+.auth-gate { max-width: 420px; margin: 15vh auto 0; padding: 24px; text-align: center; }
+.auth-gate .error { color: var(--error); min-height: 1.4em; }
+.auth-bar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin: 0; font-size: 0.85rem; color: var(--muted); }

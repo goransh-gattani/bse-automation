@@ -4,10 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BSE Announcements</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=6">
+  <script src="config.js"></script>
+  <script src="auth.js?v=6"></script>
 </head>
 <body>
-  <main>
+  <section id="auth-gate" class="auth-gate" hidden>
+    <h1>BSE Announcements</h1>
+    <p>Sign in with your Microsoft work account to continue.</p>
+    <button type="button" id="signin-btn" class="primary">Sign in with Microsoft</button>
+    <p id="auth-message" class="error" role="alert"></p>
+  </section>
+
+  <main id="app">
+    <p id="auth-bar" class="auth-bar" hidden><span id="auth-user"></span> <button type="button" id="signout-btn">Sign out</button></p>
     <h1>BSE Announcements</h1>
     <p class="hint">BSE blocking the proxy? Use the <a href="bookmarklet.html">bookmarklet version</a>, which runs inside bseindia.com.</p>
 
@@ -41,6 +51,6 @@
       </table>
     </div>
   </main>
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>

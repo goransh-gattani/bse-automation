@@ -1,0 +1,5 @@
+# For the Railway server (server/app.py). The local proxy needs none of these.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+PyJWT[crypto]>=2.9
+curl_cffi>=0.7

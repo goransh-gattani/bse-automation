@@ -25,6 +25,9 @@ const PARAM_LABELS = {
 };
 
 const isLocal = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
+// Set by the server's config.js when it has its own /api (the Railway version).
+const APP_CONFIG = window.APP_CONFIG || {};
+const hasOwnProxy = isLocal || Boolean(APP_CONFIG.proxy);
 
 // The Cloudflare Worker the hosted page uses by default (see README). A proxy
 // URL typed into the page overrides it for that browser.
@@ -49,6 +52,39 @@ function downloadName(row) {
   const company = row.company.replace(/[^A-Za-z0-9 .&()-]/g, "").replace(/\s+/g, " ").trim().replace(/\.+$/, "");
   const day = row.date.replace(/\D/g, "").slice(0, 8).replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3");
   return [company || row.scrip, day].filter(Boolean).join("_") + ".pdf";
+}
+
+// The sign-in token, only for this page's own server (never for another proxy).
+async function authHeaders(url) {
+  if (!window.appAuth || new URL(url, location.href).origin !== location.origin) return {};
+  return window.appAuth.headers();
+}
+
+// A link can't carry the sign-in token, so behind sign-in the PDF is fetched
+// with it and handed to the browser as a file.
+async function downloadWithAuth(event, row) {
+  const link = event.currentTarget;
+  if (!window.appAuth || new URL(link.href).origin !== location.origin) return;
+  event.preventDefault();
+  const old = link.textContent;
+  link.textContent = "⬇ Saving…";
+  try {
+    const resp = await fetch(link.href, { headers: await authHeaders(link.href) });
+    if (resp.status === 401) return window.appAuth.rejected(await resp.text());
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const blobUrl = URL.createObjectURL(await resp.blob());
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = downloadName(row);
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+  } catch (err) {
+    setStatus(`Download failed for ${row.company || row.scrip}: ${err.message}`, true);
+  } finally {
+    link.textContent = old;
+  }
 }
 
 // The proxy fetches the PDF and sends it back as an attachment, which the
@@ -81,14 +117,14 @@ function parseResponse(data) {
 }
 
 function loadSettings() {
-  const settings = { scrip: "532942", params: { ...DEFAULT_PARAMS }, proxy: isLocal ? "/api" : HOSTED_PROXY };
+  const settings = { scrip: "532942", params: { ...DEFAULT_PARAMS }, proxy: APP_CONFIG.proxy || (isLocal ? "/api" : HOSTED_PROXY) };
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
     if (saved.scrip) settings.scrip = saved.scrip;
     Object.assign(settings.params, saved.params || {});
     // A saved local-proxy URL is useless on the hosted site; keep the default there.
     const localOnly = /^\/|localhost|127\.0\.0\.1/.test(saved.proxy || "");
-    if (saved.proxy && (isLocal || !localOnly)) settings.proxy = saved.proxy;
+    if (saved.proxy && (hasOwnProxy || !localOnly)) settings.proxy = saved.proxy;
   } catch (e) {
     // Storage blocked or corrupt: fall back to defaults.
   }
@@ -141,6 +177,7 @@ function renderRows(rows) {
       save.download = downloadName(row);
       save.className = "download";
       save.textContent = "⬇ Download";
+      save.addEventListener("click", (e) => downloadWithAuth(e, row));
       pdfCell.append(view, save);
     } else {
       pdfCell.textContent = "—";
@@ -159,11 +196,15 @@ async function fetchScrip(proxy, scrip, params) {
   url.searchParams.set("strScrip", scrip);
   let resp;
   try {
-    resp = await fetch(url, { headers: { Accept: "application/json" } });
+    resp = await fetch(url, { headers: { Accept: "application/json", ...(await authHeaders(url)) } });
   } catch (e) {
     throw new Error(`Could not reach the proxy at ${url.origin} (is it running?)`);
   }
   const text = await resp.text();
+  if (resp.status === 401 && window.appAuth) {
+    window.appAuth.rejected(text);
+    throw new Error(`not signed in: ${text}`);
+  }
   if (resp.status === 403) throw new Error("BSE refused the request (HTTP 403)");
   if (!resp.ok) throw new Error(`BSE returned HTTP ${resp.status}: ${text.slice(0, 200)}`);
   let data;
@@ -211,7 +252,7 @@ async function fetchAnnouncements() {
         renderRows(all);
       } catch (err) {
         failed.push(`${scrip} (${err.message})`);
-        if (err.message.includes("proxy") || err.message.includes("403")) break;
+        if (/proxy|403|not signed in/.test(err.message)) break;
       }
     }
     const notes = [];

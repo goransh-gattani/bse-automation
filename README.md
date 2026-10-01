@@ -18,6 +18,10 @@ Every push to `main` updates the site. After an update that changes the bookmark
 
 The main address opens the lookup page, which uses the Cloudflare Worker at https://bse-proxy.goransh-gattani.workers.dev by default (`HOSTED_PROXY` in `docs/app.js`). The bookmarklet install page is at `bookmarklet.html`.
 
+## Hosted with Microsoft sign-in (Railway)
+
+`server/app.py` serves the same page from Railway behind a "Sign in with Microsoft" screen (via Supabase Auth) and proxies BSE itself. See [RAILWAY_SETUP.md](RAILWAY_SETUP.md) for the setup steps.
+
 ## Optional: the proxy version on your computer
 
 Needs Python 3.8+ and nothing else. From the repository's top folder (not `docs/`):
