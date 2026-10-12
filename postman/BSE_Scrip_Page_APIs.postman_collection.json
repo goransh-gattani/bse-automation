@@ -1,0 +1,657 @@
+{
+  "info": {
+    "name": "BSE India - Scrip Page APIs",
+    "description": "All data APIs fired by https://www.bseindia.com/stock-share-price/<slug>/<symbol>/<scripcode>, captured 12 Oct 2026 using scripcode 500002 (ABB India Ltd).\n\nChange the `scripcode` collection variable to query any other equity scrip.\n\nNotes:\n- Base URLs come from https://www.bseindia.com/assets/data/appConfig.json (BSE_Domain_APIUrl and BSE_Domain_RealtimeUrl).\n- SecurityPosition and both TabResults_PAR calls return a JSON string that itself contains JSON, so they need a second JSON.parse. In StockReachGraphCas the `Data` field is likewise a JSON string.\n- Most numeric values are formatted strings with Indian digit grouping (e.g. \"1,47,551.80\"); EQPeerGp returns real numbers.\n- Only equity scrips were tested. Debt/ETF/InvIT scrips use other flag values (Debtflag, quotetype).\n- Origin/Referer/User-Agent headers are set at collection level to mimic the browser. Whether the API requires them outside a browser has not been verified.\n\nScrip Discovery folder (added 12 Oct 2026): the three APIs behind https://www.bseindia.com/corporates/list_scrips, used to find or validate scrip codes. The autosuggest API sits under {{msourceUrl}} instead of {{baseUrl}}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://api.bseindia.com/BseIndiaAPI/api"
+    },
+    {
+      "key": "realtimeUrl",
+      "value": "https://api.bseindia.com/RealTimeBseIndiaAPI/api"
+    },
+    {
+      "key": "scripcode",
+      "value": "500002"
+    },
+    {
+      "key": "msourceUrl",
+      "value": "https://api.bseindia.com/MSource/1D"
+    }
+  ],
+  "item": [
+    {
+      "name": "Header & Quote",
+      "item": [
+        {
+          "name": "getScripHeaderData",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/getScripHeaderData/w?Debtflag=&scripcode={{scripcode}}&seriesid=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "getScripHeaderData",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "Debtflag",
+                  "value": ""
+                },
+                {
+                  "key": "scripcode",
+                  "value": "{{scripcode}}"
+                },
+                {
+                  "key": "seriesid",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "**Returns:** company name and SEO URLs (`Cmpname`: FullN, ShortN, SEOUrlEQ, SEOUrlDR, Category), live price block (`CurrRate`: LTP, Chg, PcChg), and `Header` with Open, High, Low, PrevClose, LTP, `Ason` timestamp, notice count, and ASM/GSM/EMS/SMS flag text and URLs, plus pre-open and periodic-call-auction fields (null outside those sessions)."
+          }
+        },
+        {
+          "name": "ComHeadernew_par",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ComHeadernew_par/w?quotetype=&scripcode={{scripcode}}&seriesid=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ComHeadernew_par",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "quotetype",
+                  "value": ""
+                },
+                {
+                  "key": "scripcode",
+                  "value": "{{scripcode}}"
+                },
+                {
+                  "key": "seriesid",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "**Returns:** security master and ratios - SecurityCode, SecurityId, ISIN, Group, Index/Grp_Index, Industry, IndustryNew, IGroup, ISubGroup, Sector, FaceVal, SetlType, EPS, CEPS, PE, PB, ROE, NPM, OPM, and the consolidated equivalents (ConEPS, ConCEPS, ConPE, ConPB, ConROE, ConNPM, ConOPM). Contact fields (COName, COdetails, Email, Contact) are blank for most equities."
+          }
+        },
+        {
+          "name": "MarketDepth (realtime)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{realtimeUrl}}/MarketDepth/w?flag=&quotetype=EQ&scripcode={{scripcode}}",
+              "host": [
+                "{{realtimeUrl}}"
+              ],
+              "path": [
+                "MarketDepth",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "flag",
+                  "value": ""
+                },
+                {
+                  "key": "quotetype",
+                  "value": "EQ"
+                },
+                {
+                  "key": "scripcode",
+                  "value": "{{scripcode}}"
+                }
+              ]
+            },
+            "description": "**Returns:** top-5 order book - BPrice1..5 / BQty1..5 (bids), SPrice1..5 / SQty1..5 (asks), TotalBQty, TotalSQty, `dttm` (date), and `source`. All values are formatted strings (e.g. \"6,962.50\")."
+          }
+        },
+        {
+          "name": "StockTrading",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/StockTrading/w?flag=&quotetype=EQ&scripcode={{scripcode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "StockTrading",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "flag",
+                  "value": ""
+                },
+                {
+                  "key": "quotetype",
+                  "value": "EQ"
+                },
+                {
+                  "key": "scripcode",
+                  "value": "{{scripcode}}"
+                }
+              ]
+            },
+            "description": "**Returns:** trading stats - WAP (weighted average price), Turnover and `Turnoverin` unit (Cr.), TTQ (total traded quantity), TwoWkAvgQty and unit (Lakh), MktCapFF (free-float market cap), MktCapFull (full market cap, Cr.), CktLimit (lower/upper circuit as one string), ExDate, and blockdttm (block deal timestamp, blank if none)."
+          }
+        },
+        {
+          "name": "HighLow",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/HighLow/w?Type=EQ&flag=C&scripcode={{scripcode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "HighLow",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "Type",
+                  "value": "EQ"
+                },
+                {
+                  "key": "flag",
+                  "value": "C"
+                },
+                {
+                  "key": "scripcode",
+                  "value": "{{scripcode}}"
+                }
+              ]
+            },
+            "description": "**Returns:** 52-week high and low, adjusted and unadjusted, with dates (Fifty2WkHigh_adj, Fifty2WkHigh_adjDt, Fifty2WkHigh_unadj, Fifty2WkLow_adj, Fifty2WkLow_adjDt, Fifty2WkLow_unadj), plus WeekHighLow and MonthHighLow as \"high / low\" strings. CktFilter and UnderlyingVal are null for plain equities."
+          }
+        },
+        {
+          "name": "PriceBand",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/PriceBand/w?scripcode={{scripcode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "PriceBand",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "scripcode",
+                  "value": "{{scripcode}}"
+                }
+              ]
+            },
+            "description": "**Returns:** price band limits per period - UpperT/LowerT (today), UpperD/LowerD, UpperW/LowerW, UpperM/LowerM, UpperQ/LowerQ, UpperY/LowerY (\"NA\" when not applicable), PBpcUC / PBpcLC (band percentage, upper and lower), PBdate, and the DWMQY flag."
+          }
+        },
+        {
+          "name": "SecurityPosition",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/SecurityPosition/w?quotetype=EQ&scripcode={{scripcode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "SecurityPosition",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "quotetype",
+                  "value": "EQ"
+                },
+                {
+                  "key": "scripcode",
+                  "value": "{{scripcode}}"
+                }
+              ]
+            },
+            "description": "**Returns (double-encoded JSON string - parse twice):** TradeDate (with time), QtyTraded, DeliverableQty, PcDQ_TQ (deliverable as % of traded quantity)."
+          }
+        },
+        {
+          "name": "StockReachGraphCas (intraday chart)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/StockReachGraphCas/w?scripcode={{scripcode}}&flag=0&fromdate=&todate=&seriesid=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "StockReachGraphCas",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "scripcode",
+                  "value": "{{scripcode}}"
+                },
+                {
+                  "key": "flag",
+                  "value": "0"
+                },
+                {
+                  "key": "fromdate",
+                  "value": ""
+                },
+                {
+                  "key": "todate",
+                  "value": ""
+                },
+                {
+                  "key": "seriesid",
+                  "value": ""
+                }
+              ]
+            },
+            "description": "**Returns:** Scripname, CurrDate, CurrTime, CurrVal, PrevClose, HighVal, HighVol, LowVal, LowVol, and `Data` - a JSON string (parse again) holding the intraday series as objects with `dttm`, price (`vale0`/`vale1`, key name varies by point), and `vole` (volume). 140 points were returned at 11:24 IST. `flag=0` is the intraday view; other flag values and the fromdate/todate parameters (presumably for longer ranges) were not exercised."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Fundamentals & Peers",
+      "item": [
+        {
+          "name": "EQPeerGp",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/EQPeerGp/w?scripcomare=&scripcode={{scripcode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "EQPeerGp",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "scripcomare",
+                  "value": ""
+                },
+                {
+                  "key": "scripcode",
+                  "value": "{{scripcode}}"
+                }
+              ]
+            },
+            "description": "**Returns:** `Table` array - the scrip itself plus peers (4 rows for ABB). Per row: Name, scrip_cd, LTP, Change, EPS, Cash_EPS, PE, PB, FACE_VALUE, Equity, Revenue, PAT, OPM, NPM, RONW, ResQtr and Results_QuarterName, w52hi/w52hidt, w52lo/w52lodt. Shareholding fields (FII, DII, Public, etc.) were null in this response. Numbers are real numerics here, unlike most other endpoints."
+          }
+        },
+        {
+          "name": "TabResults_PAR - RESULTS",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/TabResults_PAR/w?scripcode={{scripcode}}&tabtype=RESULTS",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "TabResults_PAR",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "scripcode",
+                  "value": "{{scripcode}}"
+                },
+                {
+                  "key": "tabtype",
+                  "value": "RESULTS"
+                }
+              ]
+            },
+            "description": "**Returns (double-encoded JSON string - parse twice):** column labels (col1 unit, col2/col3/col4 = latest quarter, previous quarter, financial year); `resultinCr` and `resultinM` arrays of {title, v1, v2, v3} for Revenue, Net Profit, EPS, Cash EPS, OPM %, NPM % (Cr. and millions); `resultinS` with the period labels (FY, LQ, SQ) and links to the BSE results pages (LFY, LLQ, LSQ). Note the FY label is returned as-is by BSE (\"FY25-25\" at capture time)."
+          }
+        },
+        {
+          "name": "TabResults_PAR - NEWS",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/TabResults_PAR/w?scripcode={{scripcode}}&tabtype=NEWS",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "TabResults_PAR",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "scripcode",
+                  "value": "{{scripcode}}"
+                },
+                {
+                  "key": "tabtype",
+                  "value": "NEWS"
+                }
+              ]
+            },
+            "description": "**Returns (double-encoded JSON string - parse twice):** array of recent announcements, each {Newsid (GUID), NewsSubj (subject), Newsdt (dd/mm/yyyy)}. How Newsid maps to the announcement document URL was not traced."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Flags & Misc",
+      "item": [
+        {
+          "name": "ScripwiseCautionaryMsg",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ScripwiseCautionaryMsg/w?scripcode={{scripcode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ScripwiseCautionaryMsg",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "scripcode",
+                  "value": "{{scripcode}}"
+                }
+              ]
+            },
+            "description": "**Returns:** `Table` and `Table1` arrays of cautionary / surveillance messages for the scrip. Both were empty for ABB, so the row shape for a flagged scrip is unknown."
+          }
+        },
+        {
+          "name": "LeftMenunew",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/LeftMenunew/w?quotetype=LMN&scripcode={{scripcode}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "LeftMenunew",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "quotetype",
+                  "value": "LMN"
+                },
+                {
+                  "key": "scripcode",
+                  "value": "{{scripcode}}"
+                }
+              ]
+            },
+            "description": "**Returns:** which sections apply to this scrip - EQSEOurl, isEqT0_T1, ishybrid, ismflisted, and booleans showResults, showDeriv, showSLB, showDEBT, showETF, showINVIT, showCAS, showRPT, isshowDebtscrip, plus SpecialResults / SpecialResults_New. Useful for deciding which other endpoints are relevant for a given scrip code."
+          }
+        },
+        {
+          "name": "Mkt_GetTicker_ng (site-wide, not scrip-specific)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/Mkt_GetTicker_ng/w?env=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "Mkt_GetTicker_ng",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "env",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "**Returns:** `Table` array of site-wide ticker banners (6 rows at capture) - ID, sort_id, Ticker_cat, Header_HTML, Header_URL (both HTML strings), InsDTTM, Expiry_time, isIndian, isInternational. Not related to the scrip code; included only because the page calls it on load."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scrip Discovery (list_scrips page)",
+      "description": "APIs behind https://www.bseindia.com/corporates/list_scrips, the 'List Of Securities' page. Use these to discover or validate scrip codes. Explored 12 Oct 2026; see each request for parameter behaviour and what is still unconfirmed.",
+      "item": [
+        {
+          "name": "ddlGroup (group codes, loaded on page open)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ddlGroup/w?flag=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ddlGroup",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "flag",
+                  "value": "0",
+                  "description": "Only flag=0 returns data. flag=1, 2 and 3 return []. A blank flag returns HTTP 400 'Bad Request'."
+                }
+              ]
+            },
+            "description": "**Returns:** a JSON array of {\"GROUP_CODE\": \"...\"} objects, 25 at capture: A, B, E, F, FC, GC, I, IF, IP, M, MS, MT, P, R, SE, T, TS, W, X, XD, XT, Y, Z, ZP, ZY. These populate the page's Groups dropdown and are the valid values for the `Group` filter of ListofScripData_new.\n\nThe page calls this once on load. No second call was seen when the Segment dropdown changed, so the list does not depend on the segment (the same 25 codes are offered for every segment)."
+          }
+        },
+        {
+          "name": "ListofScripData_new - list by segment / status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ListofScripData_new/w?Group=&Scripcode=&segment=Equity&status=Active&scripName=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ListofScripData_new",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "Group",
+                  "value": "",
+                  "description": "Optional. Exchange trading group code (A, B, T, X, XT, Z, ...), case-insensitive; the 25 valid codes come from ddlGroup. ANDed with the other filters. 'Select' returns nothing; omit or leave blank for all groups."
+                },
+                {
+                  "key": "Scripcode",
+                  "value": "",
+                  "description": "Optional. EXACT scrip code (partial codes such as 5000 return nothing). Only matches inside the chosen segment: 500002 under segment=EQT0 returns nothing; the T+0 twin of ABB is 100002."
+                },
+                {
+                  "key": "segment",
+                  "value": "Equity",
+                  "description": "REQUIRED in practice (blank or 'Select' returns []; with no params at all the result is []). Values used by the page: Equity (UI label 'Equity T+1'), EQT0 (Equity T+0), MF (MF/ETF), HS (Hybrid Security), MB (Municipal Bonds), PreferenceShares, Debentures and Bonds, Equity - Institutional Series, Commercial Papers, SSE. URL-encode spaces. Unrecognised values (e.g. Foo, 'Equity T+1') returned the Equity row for 500002, so they appear to fall back to Equity; the fallback was not confirmed beyond that one case."
+                },
+                {
+                  "key": "status",
+                  "value": "Active",
+                  "description": "Optional. Active, Suspended or Delisted. Blank or omitted returns all statuses (Equity: 10,947 rows vs 10,944 from the three statuses, so 3 rows carry another status that was not identified). Any other value returns []."
+                },
+                {
+                  "key": "scripName",
+                  "value": "",
+                  "description": "Optional. Case-insensitive CONTAINS match on the security name (and, judging by 'ABB India Limited' matching ABB, the issuer name; not isolated). Does NOT match scrip_id (symbol) or ISIN: ABBOTINDIA and INE117A01022 return []. '%' passes through as a wildcard (scripName=% returns every row), so the value looks like it feeds a SQL LIKE. ANDed with the other filters."
+                }
+              ]
+            },
+            "description": "**Returns:** a JSON array (no pagination, no wrapper object) with one object per security: `SCRIP_CD` (string, e.g. \"500002\"), `scrip_id` (symbol, e.g. \"ABB\"), `Scrip_Name` (\"ABB India Ltd\"), `Issuer_Name` (\"ABB India Limited\"), `Segment`, `Status`, `GROUP`, `FACE_VALUE` (string, \"2.00\"), `ISIN_NUMBER`, `Mktcap` (string, Rs crore, no separators, e.g. \"145561.98\"; the page formats it as 1,45,561.98), `INDUSTRY` (null in every row sampled, so do not rely on it; use ComHeadernew_par for sector/industry) and `NSURL` (the scrip's stock-share-price page URL, which contains the slug).\n\nThis is the call the 'List Of Securities' page (https://www.bseindia.com/corporates/list_scrips) makes when Submit is pressed. Unmatched filters return `[]` with HTTP 200, not an error.\n\n**Size warning:** responses are unpaginated. Equity + Active is ~1.8 MB (5,225 rows); Equity with blank status is ~3.8 MB (10,947 rows). Prefer Scripcode / scripName filters when you need one scrip.\n\n**Row counts on 12 Oct 2026 (Active / Suspended / Delisted / blank status):**\n- Equity: 5,225 / 1,094 / 4,625 / 10,947\n- EQT0: 518 / 2 / 12 / 532\n- MF: 550 / 1,523 / 7,392 / 9,465\n- HS: 27 / 0 / 0 / 27\n- MB: 25 / 1 / 4 / 30\n- PreferenceShares: 13,038 / 6,008 / 46,066 / 65,115\n- Debentures and Bonds: 5,472 / 783 / 21,263 / 27,518\n- Equity - Institutional Series: 0 / 0 / 0 / 0 (empty for every status; alternative spellings not tested)\n- Commercial Papers: 885 / 1,272 / 12,892 / 15,049\n- SSE: 5 / 0 / 0 / 5\n\nOnly the Equity segment's fields were inspected (first and last row of Equity + Active, plus the 500002 lookup). Field population in the other segments was not profiled."
+          }
+        },
+        {
+          "name": "ListofScripData_new - look up one scrip code",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ListofScripData_new/w?Group=&Scripcode={{scripcode}}&segment=Equity&status=&scripName=",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ListofScripData_new",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "Group",
+                  "value": "",
+                  "description": "Leave blank."
+                },
+                {
+                  "key": "Scripcode",
+                  "value": "{{scripcode}}",
+                  "description": "Exact scrip code."
+                },
+                {
+                  "key": "segment",
+                  "value": "Equity",
+                  "description": "Required. Use EQT0 for T+0 codes such as 100002."
+                },
+                {
+                  "key": "status",
+                  "value": "",
+                  "description": "Blank returns Active, Suspended and Delisted matches."
+                },
+                {
+                  "key": "scripName",
+                  "value": "",
+                  "description": "Leave blank; combining with Scripcode ANDs the filters (500002 + 'Abbott' returns [])."
+                }
+              ]
+            },
+            "description": "**Returns:** a one-element array for a valid code in that segment (for 500002: scrip_id ABB, Scrip_Name 'ABB India Ltd', Issuer_Name 'ABB India Limited', Segment Equity, Status Active, GROUP A, FACE_VALUE 2.00, ISIN INE117A01022, Mktcap, NSURL .../stock-share-price/abb-india-ltd/abb/500002/), or `[]` if the code does not exist in that segment. Same row shape as the list request.\n\nUseful as a validity check and as a code -> symbol / ISIN / page-URL lookup before calling the scrip page APIs. The segment must match: 500002 under EQT0 returns []."
+          }
+        },
+        {
+          "name": "ListofScripData_new - search by name",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ListofScripData_new/w?Group=&Scripcode=&segment=Equity&status=Active&scripName=ABB",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ListofScripData_new",
+                "w"
+              ],
+              "query": [
+                {
+                  "key": "Group",
+                  "value": "",
+                  "description": "Optional."
+                },
+                {
+                  "key": "Scripcode",
+                  "value": "",
+                  "description": "Leave blank."
+                },
+                {
+                  "key": "segment",
+                  "value": "Equity",
+                  "description": "Required."
+                },
+                {
+                  "key": "status",
+                  "value": "Active",
+                  "description": "Optional."
+                },
+                {
+                  "key": "scripName",
+                  "value": "ABB",
+                  "description": "Case-insensitive contains match; 'ABB' returns ABB India Ltd (500002) and Abbott India Ltd (500488)."
+                }
+              ]
+            },
+            "description": "**Returns:** array of every security in the segment whose name contains `scripName`, same row shape as the list request. Examples: 'ABB' -> 2 rows; 'India' (Equity, Active) -> 540 rows; 'zzzz...' -> []. Matching is on the name, not on the symbol or ISIN. For symbol / ISIN / code search use GetQuoteAllSearchDatabeta."
+          }
+        },
+        {
+          "name": "GetQuoteAllSearchDatabeta (search box / autosuggest)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{msourceUrl}}/GetQuoteAllSearchDatabeta.aspx?searchString={{scripcode}}",
+              "host": [
+                "{{msourceUrl}}"
+              ],
+              "path": [
+                "GetQuoteAllSearchDatabeta.aspx"
+              ],
+              "query": [
+                {
+                  "key": "searchString",
+                  "value": "{{scripcode}}",
+                  "description": "Free text: scrip code, symbol, name fragment or ISIN. Case-insensitive; space-separated tokens narrow the match ('abb india' -> 2 rows). The page fires it on every keystroke."
+                }
+              ]
+            },
+            "description": "**Returns:** a JSON array of {\"strSricpCode\", \"shortName\", \"scripName\", \"Isin\", \"SEOUrl\", \"Type\"}: `strSricpCode` is the scrip code, `shortName` the symbol, `scripName` the name, `Isin`, `SEOUrl` the stock-share-price page URL, and `Type` the market the entry belongs to (seen: 'in Equity T+1', 'in Equity T+0', 'in Derivatives', 'in Commodity Derivatives'; other types such as mutual funds also appear).\n\nSearch behaviour tested: 500002 -> 2 rows (Equity T+1 and Derivatives pages for the same code); ISIN INE117A01022 -> the same 2 rows; 'ABB#' or 100002 -> the Equity T+0 entry; 'abb' -> 6 rows including unrelated debt funds; 'a' -> 107 rows (no small cap seen); gibberish -> []. With an empty or missing searchString it returns a default list (15 rows, derivatives/commodity entries). Commodity entries carry relative SEOUrl paths while equities carry absolute URLs, so normalise before use.\n\nLives under /MSource/1D/ rather than /BseIndiaAPI/api; the page does not pass /w."
+          }
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.request.headers.upsert({ key: 'Origin', value: 'https://www.bseindia.com' });",
+          "pm.request.headers.upsert({ key: 'Referer', value: 'https://www.bseindia.com/' });",
+          "pm.request.headers.upsert({ key: 'User-Agent', value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36' });"
+        ]
+      }
+    }
+  ]
+}
