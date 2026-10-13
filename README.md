@@ -34,6 +34,10 @@ Keep that terminal open while you use the page. If the page says BSE refused the
 
 Open http://localhost:8000. The script serves the page and proxies `/api` to BSE, so the page's **Proxy URL** is already set to `/api`. Use `--port 9000` if 8000 is taken.
 
+## BSE Explorer on your computer
+
+`python3 proxy/local_proxy.py`, then open http://localhost:8000/explorer-app.html. The page is the same BSE Explorer as the bookmarklet (`docs/explorer.js`); on localhost it sends its calls to `/bse/<api|realtime|msource>/<path>` and the proxy forwards them to BSE with browser-like headers. `pip install curl_cffi` makes the proxy look like Chrome, which helps if BSE answers 403. Without a proxy, use the bookmarklet from `explorer.html` instead.
+
 ## Optional: the proxy version hosted (Cloudflare Worker)
 
 1. Sign in at https://dash.cloudflare.com (the free plan is enough) and go to **Workers & Pages → Create → Create Worker**.

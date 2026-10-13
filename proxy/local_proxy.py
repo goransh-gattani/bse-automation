@@ -1,6 +1,7 @@
 """Local test server for the web app: serves docs/ and proxies /api to BSE.
 
     python3 proxy/local_proxy.py           # then open http://localhost:8000
+                                           # BSE Explorer: http://localhost:8000/explorer-app.html
     python3 proxy/local_proxy.py --diag    # show how BSE answers each client
 
 Browsers can't call BSE's API directly (no CORS headers, and BSE rejects
@@ -165,6 +166,23 @@ def diagnose(query):
         print("  body:", body[:300].decode("utf-8", "replace").replace("\n", " "))
 
 
+# BSE Explorer: /bse/<api|realtime|msource>/<path>?<query> goes to the matching BSE API.
+EXPLORER_BASES = {
+    "api": "https://api.bseindia.com/BseIndiaAPI/api",
+    "realtime": "https://api.bseindia.com/RealTimeBseIndiaAPI/api",
+    "msource": "https://api.bseindia.com/MSource/1D",
+}
+EXPLORER_PATH = re.compile(r"^/bse/(api|realtime|msource)/([A-Za-z0-9_][A-Za-z0-9_./-]*)$")
+
+
+def explorer_url(path, query):
+    """The BSE URL for a /bse/... request path, or None when it is not an allowed one."""
+    match = EXPLORER_PATH.match(path)
+    if not match or ".." in path:
+        return None
+    return f"{EXPLORER_BASES[match.group(1)]}/{match.group(2)}" + ("?" + query if query else "")
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         if self.path.startswith("/api"):
@@ -182,9 +200,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         path = path.rstrip("/")
         if path == "/api/pdf":
             return self._send_pdf(query)
+        if path.startswith("/bse/"):
+            url = explorer_url(path, query)
+            if url is None:
+                return self.send_error(400, "Not a BSE Explorer path")
+            return self._send_upstream(*fetch_upstream(url))
         if path != "/api":
             return super().do_GET()
-        status, body, ctype = fetch_upstream(UPSTREAM + ("?" + query if query else ""))
+        self._send_upstream(*fetch_upstream(UPSTREAM + ("?" + query if query else "")))
+
+    def _send_upstream(self, status, body, ctype):
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -226,6 +251,7 @@ def main():
         (args.host, args.port), partial(Handler, directory=str(DOCS_DIR))
     )
     names = ", ".join(name for name, _ in strategies())
+    print(f"Explorer: http://localhost:{args.port}/explorer-app.html")
     print(f"Open http://localhost:{args.port}  (API proxy at /api, trying: {names}. Ctrl+C to stop)")
     try:
         server.serve_forever()
