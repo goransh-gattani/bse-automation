@@ -49,7 +49,7 @@
     ["Scrip page", NEWS, "api", "TabResults_PAR/w", { scripcode: SC, tabtype: "NEWS" },
       "Recent announcements: Newsid, NewsSubj, Newsdt (JSON string, decoded here)."],
     ["Filings", "AnnSubCategoryGetData", "api", "AnnSubCategoryGetData/w", { strCat: "-1", strPrevDate: "", strScrip: SC, strSearch: "P", strToDate: "", strType: "C", subcategory: "-1", pageno: "1" },
-      "Corporate announcements and filings from BSE's announcements page: Table[] rows (SCRIP_CD, SLONGNAME, NEWS_DT, HEADLINE, CATEGORYNAME, SUBCATNAME, ATTACHMENTNAME = the PDF) and Table1[0].ROWCNT = total rows. A page is about 50 rows; pageno selects it. strCat/subcategory -1 = all; strPrevDate/strToDate are YYYYMMDD."],
+      "Corporate announcements and filings from BSE's announcements page: Table[] rows (SCRIP_CD, SLONGNAME, NEWS_DT, HEADLINE, CATEGORYNAME, SUBCATNAME, ATTACHMENTNAME = the PDF) and Table1[0].ROWCNT = total rows. A page is about 50 rows; pageno selects it. strCat/subcategory -1 = all; strPrevDate/strToDate are YYYYMMDD; spans longer than 12 months return no rows."],
     ["Scrip page", RESULTS, "api", "TabResults_PAR/w", { scripcode: SC, tabtype: "RESULTS" },
       "Latest quarter, previous quarter and FY for revenue, net profit, EPS, cash EPS, OPM, NPM (Cr and millions) plus result-page links whose qtr= is the quarter id."],
     ["Scrip page", "ScripwiseCautionaryMsg", "api", "ScripwiseCautionaryMsg/w", { scripcode: SC },
@@ -364,14 +364,14 @@ details{margin:4px 0}summary{cursor:pointer}
   // The first load shows one page of x rows; "Load more" adds the next two pages (2x rows).
   const PDF_BASE = SITE + "/xml-data/corpfiling/AttachHis/";
   const ANN_CATS = [["All announcements", "-1", "-1"], ["Financial results", "Result", "Financial Results"]];
-  const ANN_RANGES = [["Last 12 months", 365], ["Last 3 years", 1095], ["Last 5 years", 1825]];
-  const ann = { cat: 0, range: 0, rows: [], total: 0, pages: 0, x: 0, busy: false, error: "", token: 0 };
+  const ANN_RANGES = [["Last 3 months", 3], ["Last 6 months", 6], ["Last 9 months", 9], ["Last 12 months", 12]]; // BSE returns nothing for longer spans
+  const ann = { cat: 0, range: 3, rows: [], total: 0, pages: 0, x: 0, busy: false, error: "", token: 0 };
   const ymd = (d) => d.toISOString().slice(0, 10).replace(/-/g, "");
   const annBody = h("div", {});
   const annBox = h("div", {},
     h("div", { class: "row" },
       h("label", { class: "f" }, "Show", h("select", { onchange: (e) => { ann.cat = +e.target.value; annLoad(false); } }, ...ANN_CATS.map(([l], i) => h("option", { value: i }, l)))),
-      h("label", { class: "f" }, "Period", h("select", { onchange: (e) => { ann.range = +e.target.value; annLoad(false); } }, ...ANN_RANGES.map(([l], i) => h("option", { value: i }, l))))),
+      h("label", { class: "f" }, "Period", h("select", { onchange: (e) => { ann.range = +e.target.value; annLoad(false); } }, ...ANN_RANGES.map(([l], i) => h("option", { value: i, selected: i === ann.range }, l))))),
     annBody);
 
   // "<Company>_<YYYY-MM-DD>.pdf", or the scrip code when BSE gives no company name.
@@ -418,7 +418,8 @@ details{margin:4px 0}summary{cursor:pointer}
     ann.busy = true;
     ann.error = "";
     drawAnn();
-    const now = new Date(), since = new Date(now.getTime() - ANN_RANGES[ann.range][1] * 864e5);
+    const now = new Date(), since = new Date(now);
+    since.setMonth(since.getMonth() - ANN_RANGES[ann.range][1]);
     const pages = more ? [ann.pages + 1, ann.pages + 2] : [1];
     const res = await Promise.all(pages.map((p) => call(byId.AnnSubCategoryGetData, { strCat: ANN_CATS[ann.cat][1], strPrevDate: ymd(since), strScrip: state.code,
       strSearch: "P", strToDate: ymd(now), strType: "C", subcategory: ANN_CATS[ann.cat][2], pageno: String(p) })));
