@@ -457,7 +457,7 @@ details{margin:4px 0}summary{cursor:pointer}
     h("p", { class: "muted" }, "Quarterly P&L from BSE's results page, as originally filed (later restatements are not applied). Expenses are negative. BSE labels these amounts Rs million; check the SEBI summary in the API console if a company reports differently."),
     finNote,
     h("div", { class: "row" }, h("label", { class: "f" }, "Up to quarter", finQ), h("label", { class: "f" }, "How many", finN),
-      h("button", { class: "primary", type: "button", onclick: () => loadFin() }, "Load"),
+      h("button", { class: "primary", type: "button", onclick: () => loadFin(false) }, "Load"),
       h("button", { type: "button", onclick: () => finTable && saveFile(`bse_${state.code}_pnl.csv`, toCsv(finTable.rows, finTable.cols), "text/csv") }, "Download CSV")),
     finOut);
 
@@ -499,13 +499,27 @@ details{margin:4px 0}summary{cursor:pointer}
     finNote.textContent = `Latest filed quarter: ${endLabel(end) || idLabel(latest)}${end ? ` (ended ${end})` : ""}.`;
   }
 
-  async function loadFin() {
+  // The first Load fetches x quarters; "Load more" adds 2x older ones each time, until BSE has no more.
+  let finIds = [], finRes = [], finX = 0, finDone = false;
+  const FIN_MAX = 80;
+  async function loadFin(more = false) {
     if (!state.code) return finOut.replaceChildren(h("p", { class: "err" }, "Fetch a scrip first."));
-    const latest = num(finQ.value), n = Math.min(12, Math.max(1, parseInt(finN.value, 10) || 5));
-    finOut.replaceChildren(h("p", { class: "muted" }, "Loading…"));
-    const ids = Array.from({ length: n }, (_, i) => (latest - i).toFixed(2));
+    let first, count;
+    if (more) {
+      first = num(finIds[finIds.length - 1]) - 1;
+      count = Math.min(2 * finX, FIN_MAX - finIds.length);
+    } else {
+      first = num(finQ.value);
+      count = finX = Math.min(12, Math.max(1, parseInt(finN.value, 10) || 5));
+      finIds = []; finRes = []; finDone = false;
+      finOut.replaceChildren(h("p", { class: "muted" }, "Loading…"));
+    }
+    const out = finRes, ids = finIds; // null in out until that quarter has answered
+    const batch = Array.from({ length: count }, (_, i) => (first - i).toFixed(2));
+    const from = ids.length;
+    ids.push(...batch);
+    batch.forEach(() => out.push(null));
     const token = ++finToken;
-    const out = ids.map(() => null); // null until that quarter has answered
     const draw = () => {
     const cols = [];
     out.forEach((r, i) => {
@@ -545,12 +559,19 @@ details{margin:4px 0}summary{cursor:pointer}
         h("thead", {}, h("tr", {}, h("th", {}, "Line"), ...cols.map((c) => h("th", { class: "n", title: `BSE quarter id ${c.q}` }, endLabel(c.end) || c.end || "?", h("div", { class: "muted" }, `${c.end || ""} · ${c.type || ""}`))))),
         h("tbody", {}, ...names.map((nm) => h("tr", {}, h("td", {}, nm), ...cols.map((c) => h("td", { class: "n" }, fmt(c.lines.get(nm)))))),
           ...derived.map(([label, f]) => h("tr", { class: "derived" }, h("td", {}, label), ...cols.map((c) => h("td", { class: "n" }, f(c))))))),
-      h("p", { class: "muted" }, "Derived rows are computed here, not returned by BSE. EBITDA = sales + materials + stock-in-trade purchases + inventory change + employee + other expenses (expenses are negative); shown only when all six lines exist.")));
+      h("p", { class: "muted" }, "Derived rows are computed here, not returned by BSE. EBITDA = sales + materials + stock-in-trade purchases + inventory change + employee + other expenses (expenses are negative); shown only when all six lines exist."),
+      waiting ? "" : finDone || ids.length >= FIN_MAX
+        ? h("p", { class: "muted" }, ids.length >= FIN_MAX ? `Stopped at ${FIN_MAX} quarters.` : "BSE has no older results for this company.")
+        : h("button", { type: "button", onclick: () => loadFin(true) }, `Load ${Math.min(2 * finX, FIN_MAX - ids.length)} more quarters`)));
     };
-    await Promise.all(ids.map(async (q, i) => {
-      out[i] = await call(byId[DETAIL], { Scrip_cd: state.code, Qtr: q });
+    await Promise.all(batch.map(async (q, i) => {
+      out[from + i] = await call(byId[DETAIL], { Scrip_cd: state.code, Qtr: q });
       if (token === finToken) draw(); // a newer Load or another scrip makes this one stale
     }));
+    if (token === finToken && more) { // a whole batch of answered-but-empty quarters means we ran past the first filing
+      finDone = out.slice(from).every((r) => r && r.ok && !((r.data || {}).table1 || []).length);
+      draw();
+    }
   }
 
   // ---------------------------------------------------------------- API console tab
