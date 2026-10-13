@@ -134,6 +134,7 @@
       const res = await fetch(url);
       const text = await res.text();
       const out = { url, status: res.status, ms: Math.round(performance.now() - t0), bytes: text.length, text, ok: res.ok };
+      if (LOCAL && res.status === 404) return { ...out, ok: false, error: "This server has no BSE proxy (404). Stop it and run  python3 proxy/local_proxy.py  from the repo root, then reload this page." };
       if (!res.ok) return { ...out, error: `HTTP ${res.status}${res.status === 403 ? " (BSE refused the request)" : ""}: ${text.slice(0, 120)}` };
       try { out.data = unwrap(JSON.parse(text)); } catch { return { ...out, ok: false, error: `Not JSON: ${text.slice(0, 120)}` }; }
       return out;
