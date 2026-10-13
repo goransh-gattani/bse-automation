@@ -2,28 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>BSE Explorer</title>
-  <style>html,body{margin:0;height:100%;background:#f4f4f2}</style>
+  <!-- Old address of the Explorer; it now lives at the site root. -->
+  <script>location.replace("./" + location.search);</script>
+  <meta http-equiv="refresh" content="0; url=./">
 </head>
-<body>
-  <!-- BSE only answers its own site, so the calls go through a proxy that forwards /bse/... to BSE:
-       the local one (proxy/local_proxy.py) when this page is on localhost, otherwise a Cloudflare
-       Worker (proxy/cloudflare-worker.js). Use ?proxy=<worker url> to point at your own Worker;
-       it is remembered in this browser. -->
-  <script>
-    (() => {
-      const KEY = "bse_explorer_proxy", DEFAULT_WORKER = "https://bse-proxy.goransh-gattani.workers.dev";
-      let proxy;
-      if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) proxy = "";
-      else {
-        const asked = new URLSearchParams(location.search).get("proxy");
-        try { if (asked) localStorage.setItem(KEY, asked); proxy = localStorage.getItem(KEY); } catch { /* storage blocked */ }
-        proxy = (asked || proxy || DEFAULT_WORKER).replace(/\/+$/, "");
-      }
-      window.BSE_EXPLORER_PROXY = proxy;
-    })();
-  </script>
-  <script src="explorer.js"></script>
-</body>
+<body><p><a href="./">Open BSE Explorer</a></p></body>
 </html>

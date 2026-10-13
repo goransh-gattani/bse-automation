@@ -5,7 +5,7 @@
 (() => {
   "use strict";
 
-  // explorer-app.html sets window.BSE_EXPLORER_PROXY to a proxy that forwards /bse/... to BSE:
+  // index.html sets window.BSE_EXPLORER_PROXY to a proxy that forwards /bse/... to BSE:
   // "" = the local proxy serving the page (proxy/local_proxy.py), or a Cloudflare Worker URL.
   // Without it the script only runs on a bseindia.com page, where BSE accepts the calls itself.
   const VIA = window.BSE_EXPLORER_PROXY;
