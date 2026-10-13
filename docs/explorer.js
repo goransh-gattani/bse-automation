@@ -5,7 +5,9 @@
 (() => {
   "use strict";
 
-  if (!/(^|\.)bseindia\.com$/.test(location.hostname)) {
+  // On localhost the page is served by proxy/local_proxy.py, which forwards /bse/... to BSE.
+  const LOCAL = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  if (!LOCAL && !/(^|\.)bseindia\.com$/.test(location.hostname)) {
     alert("Open any page on www.bseindia.com first, then run this again.");
     location.href = "https://www.bseindia.com/";
     return;
@@ -121,7 +123,7 @@
 
   const fill = (params) => Object.fromEntries(Object.entries(params).map(([k, v]) => [k,
     v.replace(SC, state.code).replace(QT, state.quarter).replace(NM, state.name.replace(/\s+/g, "-"))]));
-  const buildUrl = (e, params) => `${BASES[e.base]}/${e.path}?` +
+  const buildUrl = (e, params) => `${LOCAL ? "/bse/" + e.base : BASES[e.base]}/${e.path}?` +
     Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
 
   // Never throws: failures come back as {ok:false, error} so each card can show its own.
@@ -229,7 +231,7 @@ details{margin:4px 0}summary{cursor:pointer}
   const form = h("form", { onsubmit: (ev) => { ev.preventDefault(); lookup(qBox.value.trim()); } }, qBox,
     h("button", { class: "primary", type: "submit" }, "Fetch"));
   root.append(h("div", { class: "panel" },
-    h("header", {}, h("strong", {}, "BSE Explorer"), form, h("button", { class: "x", type: "button", title: "Close", onclick: () => host.remove() }, "×")),
+    h("header", {}, h("strong", {}, "BSE Explorer"), form, LOCAL ? "" : h("button", { class: "x", type: "button", title: "Close", onclick: () => host.remove() }, "×")),
     h("nav", {}, ...TABS.map(([id]) => tabBtns[id])), status, picks, ...TABS.map(([id]) => views[id])));
   document.body.append(host);
 
