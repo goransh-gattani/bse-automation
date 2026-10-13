@@ -140,6 +140,7 @@
       const res = await fetch(url);
       const text = await res.text();
       const out = { url, status: res.status, ms: Math.round(performance.now() - t0), bytes: text.length, text, ok: res.ok };
+      if (PROXIED && !LOCAL && !res.headers.get("x-explorer-proxy")) return { ...out, ok: false, error: `The proxy at ${VIA} is an older version and does not forward the BSE Explorer calls (it answered with the announcements API's reply: ${text.slice(0, 80)}). Redeploy proxy/cloudflare-worker.js to your Worker, then reload.` };
       if (PROXIED && res.status === 404) return { ...out, ok: false, error: LOCAL
         ? "This server has no BSE proxy (404). Stop it and run  python3 proxy/local_proxy.py  from the repo root, then reload this page."
         : "The proxy does not know the BSE Explorer paths (404). Redeploy proxy/cloudflare-worker.js to your Worker, then reload." };

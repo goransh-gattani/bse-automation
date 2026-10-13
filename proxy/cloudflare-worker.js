@@ -37,6 +37,10 @@ function corsHeaders(env) {
     "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN || "*",
     "Access-Control-Allow-Methods": "GET, OPTIONS",
     "Access-Control-Allow-Headers": "*",
+    // The Explorer checks this to tell a current Worker from an older one that would answer
+    // /bse/... with the announcements API's reply.
+    "Access-Control-Expose-Headers": "X-Explorer-Proxy",
+    "X-Explorer-Proxy": "1",
     Vary: "Origin",
   };
 }
