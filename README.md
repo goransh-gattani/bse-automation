@@ -51,6 +51,10 @@ Or with the CLI: `npx wrangler deploy proxy/cloudflare-worker.js --name bse-prox
 
 To use it, open https://goransh-gattani.github.io/bse-automation/index.html?proxy, expand **Parameters**, paste the worker URL into **Proxy URL**, and press **Fetch**. The page remembers it in your browser.
 
+### BSE Explorer on GitHub Pages
+
+`explorer-app.html` on the hosted site sends its calls to the Cloudflare Worker (`/bse/<api|realtime|msource>/<path>`), so the Worker must be redeployed with the current `proxy/cloudflare-worker.js` (steps below). Use `?proxy=https://<your-worker>` to point at a different Worker; the page remembers it.
+
 ## Usage
 
 1. Type or paste one or more scrip codes (e.g. `532942, 500325`, or one per line) and press **Fetch** or Enter. With several codes the page fetches them one after another and shows one combined table, newest first, with a **Scrip** column. The status line lists codes with no results, codes that have more pages, and codes that failed.

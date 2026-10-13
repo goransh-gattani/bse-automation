@@ -7,7 +7,23 @@
   <style>html,body{margin:0;height:100%;background:#f4f4f2}</style>
 </head>
 <body>
-  <!-- Needs proxy/local_proxy.py: it serves this page and forwards /bse/... to BSE. -->
+  <!-- BSE only answers its own site, so the calls go through a proxy that forwards /bse/... to BSE:
+       the local one (proxy/local_proxy.py) when this page is on localhost, otherwise a Cloudflare
+       Worker (proxy/cloudflare-worker.js). Use ?proxy=<worker url> to point at your own Worker;
+       it is remembered in this browser. -->
+  <script>
+    (() => {
+      const KEY = "bse_explorer_proxy", DEFAULT_WORKER = "https://bse-proxy.goransh-gattani.workers.dev";
+      let proxy;
+      if (/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) proxy = "";
+      else {
+        const asked = new URLSearchParams(location.search).get("proxy");
+        try { if (asked) localStorage.setItem(KEY, asked); proxy = localStorage.getItem(KEY); } catch { /* storage blocked */ }
+        proxy = (asked || proxy || DEFAULT_WORKER).replace(/\/+$/, "");
+      }
+      window.BSE_EXPLORER_PROXY = proxy;
+    })();
+  </script>
   <script src="explorer.js"></script>
 </body>
 </html>
