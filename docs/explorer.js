@@ -402,7 +402,21 @@ details{margin:4px 0}summary{cursor:pointer}
   }
 
   // ---------------------------------------------------------------- Financials tab
-  const finQ = h("input", { size: 7, placeholder: "e.g. 130.00" });
+  // BSE numbers quarters 126 = Jun-25, 127 = Sep-25, ... one per quarter (checked for ABB). People
+  // think in "Q1 FY27", so the id is only used under the hood and labels come from BSE's own dates.
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const fyLabel = (year, month) => `Q${{ 5: 1, 8: 2, 11: 3, 2: 4 }[month] || "?"} FY${String(month <= 2 ? year : year + 1).slice(-2)}`;
+  const idEnd = (id) => { const m = 2025 * 12 + 5 + 3 * (Math.round(num(id)) - 126); return [Math.floor(m / 12), m % 12]; };
+  const idLabel = (id) => { const [y, mo] = idEnd(id); return `${fyLabel(y, mo)} · ${MONTHS[mo]}-${String(y).slice(-2)}`; };
+  const endLabel = (end) => { // "30-Jun-26" -> "Q1 FY27"
+    const m = /^\d+-(\w{3})-(\d{2})$/.exec(end || "");
+    return m && MONTHS.includes(m[1]) ? fyLabel(2000 + +m[2], MONTHS.indexOf(m[1])) : "";
+  };
+  const latestGuess = () => { // the last quarter that has ended, when BSE's results link gave none
+    const now = new Date();
+    return 126 + Math.floor((now.getFullYear() * 12 + now.getMonth() - 1 - (2025 * 12 + 5)) / 3);
+  };
+  const finQ = h("select", {});
   const finN = h("input", { type: "number", min: 1, max: 12, value: 5, style: "width:60px" });
   const finOut = h("div", {});
   let finTable = null;
@@ -412,21 +426,23 @@ details{margin:4px 0}summary{cursor:pointer}
 
   views.fin.append(
     h("p", { class: "muted" }, "Quarterly P&L from BSE's results page, as originally filed (later restatements are not applied). Expenses are negative. BSE labels these amounts Rs million; check the SEBI summary in the API console if a company reports differently."),
-    h("div", { class: "row" }, h("label", { class: "f" }, "Latest quarter id", finQ), h("label", { class: "f" }, "Quarters", finN),
+    h("div", { class: "row" }, h("label", { class: "f" }, "Up to quarter", finQ), h("label", { class: "f" }, "How many", finN),
       h("button", { class: "primary", type: "button", onclick: () => loadFin() }, "Load"),
       h("button", { type: "button", onclick: () => finTable && saveFile(`bse_${state.code}_pnl.csv`, toCsv(finTable.rows, finTable.cols), "text/csv") }, "Download CSV")),
     finOut);
 
   function finReset() {
-    finQ.value = state.quarter;
+    const fromBse = isFinite(num(state.quarter));
+    const latest = fromBse ? Math.round(num(state.quarter)) : latestGuess();
+    finQ.replaceChildren(...Array.from({ length: 16 }, (_, i) => latest - i).map((id) =>
+      h("option", { value: id.toFixed(2) }, idLabel(id) + (id === latest ? (fromBse ? "  (latest on BSE)" : "  (latest ended)") : ""))));
     finTable = null;
-    finOut.replaceChildren(h("p", { class: "muted" }, state.quarter ? `Latest quarter for ${state.code}: id ${state.quarter}. Press Load.` : "Quarter id not found from the results tab; type one (130.00 = Jun-26, one step per quarter)."));
+    finOut.replaceChildren(h("p", { class: "muted" }, `Pick the latest quarter and how many to show, then press Load. Quarters BSE has no results for yet are skipped.`));
   }
 
   async function loadFin() {
     if (!state.code) return finOut.replaceChildren(h("p", { class: "err" }, "Fetch a scrip first."));
     const latest = num(finQ.value), n = Math.min(12, Math.max(1, parseInt(finN.value, 10) || 5));
-    if (!isFinite(latest)) return finOut.replaceChildren(h("p", { class: "err" }, "Enter a numeric quarter id such as 130.00."));
     finOut.replaceChildren(h("p", { class: "muted" }, "Loading…"));
     const ids = Array.from({ length: n }, (_, i) => (latest - i).toFixed(2));
     const out = await Promise.all(ids.map((q) => call(byId[DETAIL], { Scrip_cd: state.code, Qtr: q })));
@@ -439,7 +455,7 @@ details{margin:4px 0}summary{cursor:pointer}
         lines: new Map(rows.filter((x) => x.Header !== "2").map((x) => [x.fld_desc, num(x.Value)])) });
     });
     const failed = out.filter((r) => !r.ok);
-    if (!cols.length) return finOut.replaceChildren(h("p", { class: "err" }, failed.length ? failed[0].error : "BSE returned no rows for those quarter ids."));
+    if (!cols.length) return finOut.replaceChildren(h("p", { class: "err" }, failed.length ? failed[0].error : "BSE returned no results for those quarters."));
     const names = [...new Set(cols.flatMap((c) => [...c.lines.keys()]))];
     const fmt = (v) => (isFinite(v) ? v.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "—");
     const pct = (v) => (isFinite(v) ? `${(v * 100).toFixed(1)}%` : "—");
@@ -455,12 +471,13 @@ details{margin:4px 0}summary{cursor:pointer}
       ["Tax rate (derived)", (c) => pct(-get(c, "tax") / get(c, "pbt"))],
       ["PAT margin (derived)", (c) => pct(get(c, "pat") / get(c, "sales"))],
     ];
-    const csvRows = names.map((nm) => Object.fromEntries([["Line", nm], ...cols.map((c) => [c.end || c.q, c.lines.get(nm)])]));
-    finTable = { rows: csvRows, cols: ["Line", ...cols.map((c) => c.end || c.q)] };
+    const head = (c) => (endLabel(c.end) ? `${endLabel(c.end)} (${c.end})` : c.end || c.q);
+    const csvRows = names.map((nm) => Object.fromEntries([["Line", nm], ...cols.map((c) => [head(c), c.lines.get(nm)])]));
+    finTable = { rows: csvRows, cols: ["Line", ...cols.map(head)] };
     finOut.replaceChildren(
       failed.length ? h("p", { class: "err" }, `${failed.length} quarter call(s) failed: ${failed[0].error}`) : "",
       h("div", { class: "scroll" }, h("table", {},
-        h("thead", {}, h("tr", {}, h("th", {}, "Line"), ...cols.map((c) => h("th", { class: "n" }, `${c.end || "?"} `, h("div", { class: "muted" }, `${c.type || ""} · id ${c.q}`))))),
+        h("thead", {}, h("tr", {}, h("th", {}, "Line"), ...cols.map((c) => h("th", { class: "n", title: `BSE quarter id ${c.q}` }, endLabel(c.end) || c.end || "?", h("div", { class: "muted" }, `${c.end || ""} · ${c.type || ""}`))))),
         h("tbody", {}, ...names.map((nm) => h("tr", {}, h("td", {}, nm), ...cols.map((c) => h("td", { class: "n" }, fmt(c.lines.get(nm)))))),
           ...derived.map(([label, f]) => h("tr", { class: "derived" }, h("td", {}, label), ...cols.map((c) => h("td", { class: "n" }, f(c))))))),
       h("p", { class: "muted" }, "Derived rows are computed here, not returned by BSE. EBITDA = sales + materials + stock-in-trade purchases + inventory change + employee + other expenses (expenses are negative); shown only when all six lines exist.")));
