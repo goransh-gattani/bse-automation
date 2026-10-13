@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BSE Explorer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="narrow">
+    <h1>BSE Explorer</h1>
+    <p>Type a scrip code (or a name, symbol or ISIN) and see what BSE shows for it: price, ratios, market depth, trading stats, peers, announcements, an intraday chart and quarterly P&amp;L. An API console runs any of the BSE endpoints by hand, and a search tab lists securities by segment, status and group. It runs inside a bseindia.com tab in your own browser, so BSE sees an ordinary visit and no server, proxy or Postman is needed. Set it up once:</p>
+
+    <h2>Option A: bookmark button</h2>
+    <ol>
+      <li>Show your bookmarks bar (Chrome: <kbd>⌘</kbd><kbd>Shift</kbd><kbd>B</kbd>, Windows: <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>B</kbd>).</li>
+      <li>Drag this button onto the bar: <a id="bookmarklet" class="bookmarklet" href="#">BSE Explorer</a></li>
+      <li>Open <a href="https://www.bseindia.com/" target="_blank" rel="noopener">bseindia.com</a> and click the bookmark. The explorer opens on top of the page.</li>
+    </ol>
+
+    <h2>Option B: paste into the console</h2>
+    <ol>
+      <li>Open <a href="https://www.bseindia.com/" target="_blank" rel="noopener">bseindia.com</a>.</li>
+      <li>Open DevTools (<kbd>⌘</kbd><kbd>Option</kbd><kbd>J</kbd> on Mac, <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>J</kbd> on Windows) and go to the Console tab.</li>
+      <li><button type="button" id="copy">Copy code</button> then paste it into the console and press Enter. Chrome may ask you to type <code>allow pasting</code> first.</li>
+    </ol>
+    <p id="status" role="status"></p>
+    <p class="hint">After an update, drag the button again to replace your old bookmark. The code is large; if your browser refuses to save the bookmark, use Option B.</p>
+  </main>
+  <script>
+    fetch("explorer.js")
+      .then((r) => r.text())
+      .then((code) => {
+        document.getElementById("bookmarklet").href = "javascript:" + encodeURIComponent(code);
+        document.getElementById("copy").onclick = () =>
+          navigator.clipboard.writeText(code).then(
+            () => (document.getElementById("status").textContent = "Copied. Paste it into the console on bseindia.com."),
+            () => (document.getElementById("status").textContent = "Copy failed; open explorer.js and copy it by hand.")
+          );
+      });
+  </script>
+</body>
+</html>

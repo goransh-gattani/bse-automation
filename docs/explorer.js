@@ -1,0 +1,556 @@
+// BSE Explorer: look up a scrip code and see what BSE's own site shows for it, or run any
+// BSE API by hand. Runs on a bseindia.com page (as a bookmarklet or pasted into the DevTools
+// console). The calls then come from BSE's own site in your real browser, so BSE's CDN does
+// not block them and no proxy or Postman is needed.
+(() => {
+  "use strict";
+
+  if (!/(^|\.)bseindia\.com$/.test(location.hostname)) {
+    alert("Open any page on www.bseindia.com first, then run this again.");
+    location.href = "https://www.bseindia.com/";
+    return;
+  }
+  const HOST_ID = "bse-explorer-host";
+  const STORE = "bse_explorer";
+  const SITE = "https://www.bseindia.com";
+  const BASES = {
+    api: "https://api.bseindia.com/BseIndiaAPI/api",
+    realtime: "https://api.bseindia.com/RealTimeBseIndiaAPI/api",
+    msource: "https://api.bseindia.com/MSource/1D",
+  };
+  document.getElementById(HOST_ID)?.remove();
+
+  // ---------------------------------------------------------------- endpoint registry
+  // [group, id, base, path, params, what it returns]. {scripcode}, {quarter} and {scripname}
+  // are filled in from the scrip being looked at.
+  const SC = "{scripcode}", QT = "{quarter}", NM = "{scripname}";
+  const NEWS = "TabResults_PAR (NEWS)", RESULTS = "TabResults_PAR (RESULTS)", DETAIL = "Corp_detailedResult_Transpose_ng";
+  const ENDPOINTS = [
+    ["Scrip page", "getScripHeaderData", "api", "getScripHeaderData/w", { Debtflag: "", scripcode: SC, seriesid: "" },
+      "Company names and SEO URLs, live price (LTP, Chg, PcChg), Open/High/Low/PrevClose, timestamp (Ason), notice count and ASM/GSM/EMS/SMS flag text."],
+    ["Scrip page", "ComHeadernew_par", "api", "ComHeadernew_par/w", { quotetype: "", scripcode: SC, seriesid: "" },
+      "Security master and ratios: ISIN, security id, group, index, sector/industry, face value, settlement type, EPS, CEPS, PE, PB, ROE, NPM, OPM and the consolidated versions (Con*)."],
+    ["Scrip page", "MarketDepth", "realtime", "MarketDepth/w", { flag: "", quotetype: "EQ", scripcode: SC },
+      "Top-5 order book: BPrice/BQty 1-5 (bids), SPrice/SQty 1-5 (asks), TotalBQty, TotalSQty, dttm."],
+    ["Scrip page", "StockTrading", "api", "StockTrading/w", { flag: "", quotetype: "EQ", scripcode: SC },
+      "WAP, turnover (+unit), traded quantity, 2-week average quantity, market cap (full and free-float, Rs Cr), circuit limits, ex-date."],
+    ["Scrip page", "HighLow", "api", "HighLow/w", { Type: "EQ", flag: "C", scripcode: SC },
+      "52-week high/low (adjusted and unadjusted, with dates) and week/month high-low."],
+    ["Scrip page", "PriceBand", "api", "PriceBand/w", { scripcode: SC },
+      "Price band per period (UpperT/LowerT today; D/W/M/Q/Y), band percentages, date."],
+    ["Scrip page", "SecurityPosition", "api", "SecurityPosition/w", { quotetype: "EQ", scripcode: SC },
+      "Quantity traded, deliverable quantity and deliverable % (a JSON string inside JSON; the explorer decodes it)."],
+    ["Scrip page", "StockReachGraphCas", "api", "StockReachGraphCas/w", { scripcode: SC, flag: "0", fromdate: "", todate: "", seriesid: "" },
+      "Intraday series in Data (a JSON string, decoded here), plus PrevClose and day high/low. flag=0 is intraday; other ranges are untested."],
+    ["Scrip page", "EQPeerGp", "api", "EQPeerGp/w", { scripcomare: "", scripcode: SC },
+      "Peer table (Table[]): name, code, LTP, change %, EPS, PE, PB, revenue and PAT (Rs Cr), OPM, NPM, 52-week range, result quarter."],
+    ["Scrip page", NEWS, "api", "TabResults_PAR/w", { scripcode: SC, tabtype: "NEWS" },
+      "Recent announcements: Newsid, NewsSubj, Newsdt (JSON string, decoded here)."],
+    ["Scrip page", RESULTS, "api", "TabResults_PAR/w", { scripcode: SC, tabtype: "RESULTS" },
+      "Latest quarter, previous quarter and FY for revenue, net profit, EPS, cash EPS, OPM, NPM (Cr and millions) plus result-page links whose qtr= is the quarter id."],
+    ["Scrip page", "ScripwiseCautionaryMsg", "api", "ScripwiseCautionaryMsg/w", { scripcode: SC },
+      "Cautionary/surveillance messages (Table, Table1). Empty when none."],
+    ["Scrip page", "LeftMenunew", "api", "LeftMenunew/w", { quotetype: "LMN", scripcode: SC },
+      "Which sections apply to the scrip (results, derivatives, SLB, debt, ETF, ...)."],
+    ["Results page", DETAIL, "api", "Corp_detailedResult_Transpose_ng/w", { Scrip_cd: SC, Qtr: QT },
+      "Full P&L for one quarter (Qtr is a quarter id: 130.00 = Jun-26, 129.00 = Mar-26, one step per quarter): sales, other income, expense lines (negative), PBT, tax, net profit, EPS, plus type and period dates. Figures are as originally filed."],
+    ["Results page", "Corp_BSEDnBResults_SEBI_Consolidated_Res_ng", "api", "Corp_BSEDnBResults_SEBI_Consolidated_Res_ng/w",
+      { type1: "c", strtype: QT, strscripcd: SC, strscripname: NM, strresultType: "", action: "show" },
+      "SEBI-format summary as {Description, Amount} rows, including discontinued operations and comprehensive income. Amounts are labelled Rs million."],
+    ["Results page", "Corp_SEGMENTS_QUART_COMP_ng", "api", "Corp_SEGMENTS_QUART_COMP_ng/w", { Scrip_cd: SC, QuarterID: QT },
+      "Segment revenue and result in columns Q1..Q5 (meaning unconfirmed). Empty for the two latest quarters of ABB."],
+    ["Results page", "Corp_Segments_Total_p_ng", "api", "Corp_Segments_Total_p_ng/w", { Scrip_cd: SC, QuarterID: QT },
+      "Segment totals. Empty in every test."],
+    ["Results page", "Corp_GET_BSEDnBResultNotes_ng", "api", "Corp_GET_BSEDnBResultNotes_ng/w", { scrip_cd: SC, currQtr: QT },
+      "The notes to the results, as text."],
+    ["Scrip search", "GetQuoteAllSearchDatabeta", "msource", "GetQuoteAllSearchDatabeta.aspx", { searchString: SC },
+      "Search box. Takes a scrip code, symbol, name fragment or ISIN; returns [{strSricpCode, shortName, scripName, Isin, SEOUrl, Type}]. Empty text returns a default list."],
+    ["Scrip search", "ListofScripData_new", "api", "ListofScripData_new/w", { Group: "", Scripcode: "", segment: "Equity", status: "Active", scripName: "" },
+      "Securities matching the filters: SCRIP_CD, scrip_id, Scrip_Name, Issuer_Name, Segment, Status, GROUP, FACE_VALUE, ISIN_NUMBER, Mktcap (Rs Cr), NSURL. segment is required; Scripcode is exact; scripName is a contains match. Unpaginated: big segments are many MB."],
+    ["Scrip search", "ddlGroup", "api", "ddlGroup/w", { flag: "0" }, "The 25 group codes (GROUP_CODE) valid for the Group filter."],
+    ["Other", "Mkt_GetTicker_ng", "api", "Mkt_GetTicker_ng/w", { env: "1" }, "Site-wide ticker banners. Not scrip-specific."],
+  ].map(([group, id, base, path, params, returns]) => ({ group, id, base, path, params, returns }));
+  const byId = Object.fromEntries(ENDPOINTS.map((e) => [e.id, e]));
+  const DASH = ["getScripHeaderData", "ComHeadernew_par", "MarketDepth", "StockTrading", "HighLow", "PriceBand", "SecurityPosition",
+    "StockReachGraphCas", "EQPeerGp", NEWS, RESULTS, "ScripwiseCautionaryMsg", "LeftMenunew"];
+  const SEGMENTS = [["Equity", "Equity T+1"], ["EQT0", "Equity T+0"], ["MF", "MF/ETF"], ["HS", "Hybrid Security"], ["MB", "Municipal Bonds"],
+    ["PreferenceShares", "Preference Shares"], ["Debentures and Bonds", "Debentures and Bonds"],
+    ["Equity - Institutional Series", "Equity - Institutional Series"], ["Commercial Papers", "Commercial Papers"], ["SSE", "SSE"]];
+
+  // ---------------------------------------------------------------- state and helpers
+  const state = { code: "", name: "", quarter: "", res: {}, token: 0 };
+  const load = () => { try { return JSON.parse(localStorage.getItem(STORE) || "{}"); } catch { return {}; } };
+  const remember = (patch) => { try { localStorage.setItem(STORE, JSON.stringify({ ...load(), ...patch })); } catch { /* storage may be blocked */ } };
+
+  // DOM builder. Text always goes in as text nodes: API data is never parsed as HTML.
+  const h = (tag, props, ...kids) => {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(props || {})) {
+      if (k === "class") node.className = v;
+      else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+      else if (v === true) node.setAttribute(k, "");
+      else if (v !== false && v != null) node.setAttribute(k, v);
+    }
+    node.append(...kids.flat().filter((k) => k != null && k !== false));
+    return node;
+  };
+  const svgEl = (tag, props, ...kids) => {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [k, v] of Object.entries(props || {})) node.setAttribute(k, v);
+    node.append(...kids);
+    return node;
+  };
+  const g = (obj, path) => path.split(".").reduce((a, k) => (a == null ? undefined : a[k]), obj);
+  const blank = (v) => v == null || v === "";
+  const show = (v) => (blank(v) ? "" : typeof v === "object" ? JSON.stringify(v) : String(v));
+  const num = (v) => parseFloat(String(v).replace(/,/g, ""));
+
+  // BSE sometimes returns JSON inside a JSON string; decode those wherever they appear.
+  const unwrap = (v) => {
+    if (typeof v === "string") {
+      const t = v.trim();
+      if ((t[0] === "{" && t.endsWith("}")) || (t[0] === "[" && t.endsWith("]"))) {
+        try { return unwrap(JSON.parse(t)); } catch { /* plain text that looks like JSON */ }
+      }
+      return v;
+    }
+    if (Array.isArray(v)) return v.map(unwrap);
+    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unwrap(x)]));
+    return v;
+  };
+
+  const fill = (params) => Object.fromEntries(Object.entries(params).map(([k, v]) => [k,
+    v.replace(SC, state.code).replace(QT, state.quarter).replace(NM, state.name.replace(/\s+/g, "-"))]));
+  const buildUrl = (e, params) => `${BASES[e.base]}/${e.path}?` +
+    Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+
+  // Never throws: failures come back as {ok:false, error} so each card can show its own.
+  async function call(e, params) {
+    const url = buildUrl(e, params);
+    const t0 = performance.now();
+    try {
+      const res = await fetch(url);
+      const text = await res.text();
+      const out = { url, status: res.status, ms: Math.round(performance.now() - t0), bytes: text.length, text, ok: res.ok };
+      if (!res.ok) return { ...out, error: `HTTP ${res.status}${res.status === 403 ? " (BSE refused the request)" : ""}: ${text.slice(0, 120)}` };
+      try { out.data = unwrap(JSON.parse(text)); } catch { return { ...out, ok: false, error: `Not JSON: ${text.slice(0, 120)}` }; }
+      return out;
+    } catch (err) {
+      return { url, status: 0, ms: Math.round(performance.now() - t0), bytes: 0, text: "", ok: false, error: `Request failed: ${err.message}` };
+    }
+  }
+
+  const saveFile = (name, text, type) => {
+    const a = h("a", { href: URL.createObjectURL(new Blob([text], { type })), download: name });
+    document.body.append(a);
+    a.click();
+    a.remove();
+  };
+  const csvCell = (v) => { const s = show(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const toCsv = (rows, cols) => [cols.map(csvCell).join(","), ...rows.map((r) => cols.map((c) => csvCell(r[c])).join(","))].join("\n");
+  const pretty = (data) => { const s = JSON.stringify(data, null, 2); return s.length > 150000 ? s.slice(0, 150000) + "\n… truncated, use Download for the full response" : s; };
+  const rowsFrom = (data) => {
+    const isRows = (a) => Array.isArray(a) && a.length && a[0] && typeof a[0] === "object" && !Array.isArray(a[0]);
+    if (isRows(data)) return data;
+    return data && typeof data === "object" ? Object.values(data).find(isRows) || null : null;
+  };
+
+  // ---------------------------------------------------------------- shell
+  const CSS = `
+:host{all:initial}
+*{box-sizing:border-box}
+.panel{position:absolute;inset:0;display:flex;flex-direction:column;background:#fff;color:#1c1c1a;border:1px solid #b9b9b4;border-radius:8px;
+  box-shadow:0 8px 32px rgba(0,0,0,.35);font:13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+header{display:flex;gap:10px;align-items:center;padding:8px 12px;border-bottom:1px solid #ddd;flex-wrap:wrap}
+header strong{font-size:15px}
+header form{display:flex;gap:6px;flex:1;min-width:260px}
+header input{flex:1;min-width:160px}
+input,select,button,textarea{font:inherit;padding:4px 8px;border:1px solid #b9b9b4;border-radius:4px;background:#fff;color:inherit}
+button{cursor:pointer}button:disabled{opacity:.45;cursor:default}
+button.primary{background:#1f5fbf;border-color:#1f5fbf;color:#fff}
+.x{border:none;background:none;font-size:20px;line-height:1}
+nav{display:flex;gap:2px;padding:0 12px;border-bottom:1px solid #ddd}
+nav button{border:none;border-bottom:2px solid transparent;border-radius:0;padding:7px 12px;background:none}
+nav button.on{border-bottom-color:#1f5fbf;color:#1f5fbf;font-weight:600}
+#status{padding:4px 12px;color:#555;min-height:24px}
+#picks{padding:0 12px 6px;display:flex;flex-direction:column;gap:2px}
+#picks button{text-align:left;border:none;background:#f4f4f1}#picks button:hover{background:#e6edf9}
+main{flex:1;overflow:auto;padding:12px}
+.muted{color:#6b6b66}.err{color:#b3261e}.up{color:#157f3b}.dn{color:#b3261e}
+h2{margin:0 0 4px;font-size:18px}h3{margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#555}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;margin:10px 0}
+.card{border:1px solid #ddd;border-radius:6px;padding:10px;min-width:0;overflow:auto}
+.wide{grid-column:1/-1}
+.price{font-size:26px;font-weight:600}
+table{border-collapse:collapse;width:100%}
+th,td{padding:3px 8px;border-bottom:1px solid #eee;text-align:left;vertical-align:top}
+th{background:#f7f7f4;font-weight:600;position:sticky;top:0}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+.kv td:first-child{color:#555;width:48%}
+tr.derived td{background:#f4f8ff}tr.click{cursor:pointer}tr.click:hover td{background:#eef3fb}
+.bar{display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap}
+.scroll{max-height:62vh;overflow:auto;border:1px solid #eee}
+pre{margin:0;padding:8px;background:#f7f7f4;border-radius:4px;overflow:auto;max-height:62vh;font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-all}
+label.f{display:flex;flex-direction:column;font-size:11px;color:#555;gap:2px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+.console{display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:12px}
+@media(max-width:800px){.console{grid-template-columns:1fr}}
+details{margin:4px 0}summary{cursor:pointer}
+`;
+  const host = h("div");
+  host.id = HOST_ID;
+  host.style.cssText = "position:fixed;inset:12px;z-index:2147483647";
+  const root = host.attachShadow({ mode: "open" });
+  try {
+    const sheet = new CSSStyleSheet(); // CSSOM, so a strict page CSP can't block it
+    sheet.replaceSync(CSS);
+    root.adoptedStyleSheets = [sheet];
+  } catch {
+    root.append(h("style", {}, CSS));
+  }
+
+  const qBox = h("input", { placeholder: "Scrip code, symbol, name or ISIN", autocomplete: "off", spellcheck: "false" });
+  const status = h("div", { id: "status", role: "status" });
+  const picks = h("div", { id: "picks" });
+  const views = {};
+  const TABS = [["scrip", "Scrip"], ["fin", "Financials"], ["console", "API console"], ["find", "Find scrips"]];
+  const tabBtns = {};
+  const say = (text, isErr) => { status.textContent = text; status.className = isErr ? "err" : ""; };
+  const openTab = (name) => {
+    for (const [id] of TABS) { views[id].hidden = id !== name; tabBtns[id].className = id === name ? "on" : ""; }
+    remember({ tab: name });
+    if (name === "find") findOpened();
+  };
+
+  for (const [id, label] of TABS) {
+    views[id] = h("main", { hidden: true });
+    tabBtns[id] = h("button", { type: "button", onclick: () => openTab(id) }, label);
+  }
+  const form = h("form", { onsubmit: (ev) => { ev.preventDefault(); lookup(qBox.value.trim()); } }, qBox,
+    h("button", { class: "primary", type: "submit" }, "Fetch"));
+  root.append(h("div", { class: "panel" },
+    h("header", {}, h("strong", {}, "BSE Explorer"), form, h("button", { class: "x", type: "button", title: "Close", onclick: () => host.remove() }, "×")),
+    h("nav", {}, ...TABS.map(([id]) => tabBtns[id])), status, picks, ...TABS.map(([id]) => views[id])));
+  document.body.append(host);
+
+  // ---------------------------------------------------------------- generic table with filter and paging
+  function dataTable(rows, cols, { onRow, page = 100 } = {}) {
+    let view = rows, at = 0;
+    const info = h("span", { class: "muted" });
+    const body = h("tbody");
+    const prev = h("button", { type: "button", onclick: () => { at = Math.max(0, at - page); draw(); } }, "‹");
+    const next = h("button", { type: "button", onclick: () => { at += page; draw(); } }, "›");
+    const box = h("input", { placeholder: "Filter rows…", oninput: () => {
+      const q = box.value.toLowerCase();
+      view = q ? rows.filter((r) => cols.some((c) => show(r[c]).toLowerCase().includes(q))) : rows;
+      at = 0;
+      draw();
+    } });
+    function draw() {
+      body.replaceChildren(...view.slice(at, at + page).map((r) =>
+        h("tr", onRow ? { class: "click", title: "Open this scrip", onclick: () => onRow(r) } : {}, ...cols.map((c) => h("td", {}, show(r[c]))))));
+      info.textContent = view.length ? `${at + 1}-${Math.min(at + page, view.length)} of ${view.length}` : "No rows";
+      prev.disabled = at === 0;
+      next.disabled = at + page >= view.length;
+    }
+    draw();
+    return {
+      get rows() { return view; },
+      node: h("div", {}, h("div", { class: "bar" }, box, prev, next, info),
+        h("div", { class: "scroll" }, h("table", {}, h("thead", {}, h("tr", {}, ...cols.map((c) => h("th", {}, c)))), body))),
+    };
+  }
+
+  // ---------------------------------------------------------------- lookup
+  async function lookup(text) {
+    picks.replaceChildren();
+    if (!text) return say("Enter a scrip code, symbol, name or ISIN.", true);
+    if (/^\d{5,6}$/.test(text)) return loadScrip(text);
+    say("Searching…");
+    const r = await call(byId.GetQuoteAllSearchDatabeta, { searchString: text });
+    if (!r.ok) return say(r.error, true);
+    const seen = new Set();
+    const hits = (Array.isArray(r.data) ? r.data : []).filter((x) => { const k = x.strSricpCode + x.Type; return !seen.has(k) && seen.add(k); }).slice(0, 12);
+    if (!hits.length) return say(`No match for "${text}".`, true);
+    say(`${hits.length} match(es). Pick one:`);
+    picks.append(...hits.map((x) => h("button", { type: "button", onclick: () => { picks.replaceChildren(); qBox.value = x.strSricpCode; loadScrip(x.strSricpCode); } },
+      `${x.scripName} · ${x.shortName} · ${x.strSricpCode} · ${x.Type}`)));
+  }
+
+  async function loadScrip(code) {
+    const token = ++state.token;
+    Object.assign(state, { code, name: "", quarter: "", res: {} });
+    remember({ code });
+    qBox.value = code;
+    say(`Fetching ${DASH.length} endpoints for ${code}…`);
+    views.scrip.replaceChildren(h("p", { class: "muted" }, "Loading…"));
+    const out = await Promise.all(DASH.map((id) => call(byId[id], fill(byId[id].params))));
+    if (token !== state.token) return; // a newer lookup superseded this one
+    DASH.forEach((id, i) => { state.res[id] = out[i]; });
+    state.name = g(state.res.getScripHeaderData, "data.Cmpname.FullN") || "";
+    state.quarter = (/qtr=([\d.]+)/.exec(g(state.res[RESULTS], "data.resultinS.0.LLQ") || "") || [])[1] || "";
+    const failed = DASH.filter((id) => !state.res[id].ok).length;
+    say(failed ? `${failed} of ${DASH.length} calls failed (details on each card).` : `Loaded ${DASH.length} endpoints.`, failed > 0);
+    renderScrip();
+    finReset();
+    consoleApi.refresh();
+    openTab("scrip");
+  }
+
+  // ---------------------------------------------------------------- Scrip tab
+  const errText = (r) => (r ? r.error : "Not fetched");
+  // A card is built from one or more endpoints; if any of them failed it shows that error instead.
+  function card(title, ids, build, cls) {
+    const list = [].concat(ids).map((id) => state.res[id]);
+    const bad = list.find((r) => !r || !r.ok);
+    let body;
+    try { body = bad ? h("p", { class: "err" }, errText(bad)) : build(...list.map((r) => r.data)); }
+    catch (err) { body = h("p", { class: "err" }, `Could not display this data: ${err.message}`); }
+    return h("section", { class: `card ${cls || ""}` }, h("h3", {}, title), body);
+  }
+  const kv = (rows) => h("table", { class: "kv" }, h("tbody", {}, ...rows.filter(([, v]) => !blank(v)).map(([k, v]) => h("tr", {}, h("td", {}, k), h("td", {}, show(v))))));
+
+  function chart(data) {
+    const pts = (data.Data || []).map((p) => {
+      const key = Object.keys(p).find((k) => /^vale\d+$/.test(k));
+      return { t: Date.parse(p.dttm), y: num(p[key]) };
+    }).filter((p) => isFinite(p.t) && isFinite(p.y));
+    if (pts.length < 2) return h("p", { class: "muted" }, "No intraday points returned.");
+    const prev = num(data.PrevClose);
+    const ys = pts.map((p) => p.y).concat(isFinite(prev) ? [prev] : []);
+    const lo = Math.min(...ys), hi = Math.max(...ys), t0 = pts[0].t, t1 = pts[pts.length - 1].t;
+    const W = 640, H = 170, P = 38;
+    const x = (t) => P + (W - 2 * P) * (t1 === t0 ? 0 : (t - t0) / (t1 - t0));
+    const y = (v) => H - 22 - (H - 40) * (hi === lo ? 0.5 : (v - lo) / (hi - lo));
+    const hm = (t) => new Date(t).toTimeString().slice(0, 5);
+    const label = (tx, ty, text, anchor) => svgEl("text", { x: tx, y: ty, "font-size": 10, fill: "#555", "text-anchor": anchor || "start" }, text);
+    return svgEl("svg", { viewBox: `0 0 ${W} ${H}`, width: "100%", role: "img", "aria-label": "Intraday price" },
+      isFinite(prev) ? svgEl("line", { x1: P, x2: W - P, y1: y(prev), y2: y(prev), stroke: "#999", "stroke-dasharray": "4 3" }) : "",
+      svgEl("polyline", { fill: "none", stroke: "#1f5fbf", "stroke-width": 1.5, points: pts.map((p) => `${x(p.t).toFixed(1)},${y(p.y).toFixed(1)}`).join(" ") }),
+      label(2, y(hi) + 3, hi.toFixed(2)), label(2, y(lo) + 3, lo.toFixed(2)),
+      isFinite(prev) ? label(W - P + 2, y(prev) + 3, `prev ${prev.toFixed(2)}`) : "",
+      label(P, H - 6, hm(t0)), label(W - P, H - 6, hm(t1), "end"));
+  }
+
+  function renderScrip() {
+    const R = state.res, D = (id) => g(R[id], "data");
+    const head = D("getScripHeaderData"), com = D("ComHeadernew_par");
+    const chg = g(head, "CurrRate.Chg"), pc = g(head, "CurrRate.PcChg");
+    const dir = num(chg) < 0 ? "dn" : num(chg) > 0 ? "up" : "";
+    const link = g(head, "Cmpname.SEOUrlEQ");
+    const title = h("div", {},
+      h("h2", {}, g(head, "Cmpname.FullN") || g(com, "SecurityId") || state.code),
+      h("div", { class: "muted" }, [g(com, "SecurityId"), state.code, g(com, "ISIN"), g(com, "Group") && `Group ${g(com, "Group")}`, g(com, "Sector"), g(com, "IndustryNew")].filter(Boolean).join(" · "),
+        link ? [" · ", h("a", { href: SITE + link, target: "_blank", rel: "noopener" }, "Open on BSE")] : ""),
+      head ? h("div", {}, h("span", { class: "price" }, g(head, "Header.LTP") || g(head, "CurrRate.LTP") || ""), " ",
+        h("span", { class: dir }, `${chg || ""} (${pc || ""}%)`), " ", h("span", { class: "muted" }, g(head, "Header.Ason") || "")) : h("p", { class: "err" }, errText(R.getScripHeaderData)));
+
+    const ratio = (label, a, b) => h("tr", {}, h("td", {}, label), h("td", { class: "n" }, show(g(com, a)) || "—"), h("td", { class: "n" }, show(g(com, b)) || "—"));
+    const flags = () => {
+      const hd = g(head, "Header") || {};
+      const items = ["ASMText", "GSMText", "EMSText", "SMSText", "IRPText", "DisplayText"].filter((k) => hd[k]).map((k) => `${k}: ${hd[k]}`);
+      const caution = [...(D("ScripwiseCautionaryMsg")?.Table || []), ...(D("ScripwiseCautionaryMsg")?.Table1 || [])].map(show);
+      const all = [...items, ...caution];
+      return all.length ? h("ul", {}, ...all.map((t) => h("li", {}, t))) : h("p", { class: "muted" }, "None reported.");
+    };
+
+    const resultsCard = card("Latest results (Rs Cr)", RESULTS, (d) => h("table", {},
+      h("thead", {}, h("tr", {}, h("th", {}, ""), ...["col2", "col3", "col4"].map((c) => h("th", { class: "n" }, d[c] || "")))),
+      h("tbody", {}, ...(d.resultinCr || []).map((r) => h("tr", {}, h("td", {}, r.title), ...["v1", "v2", "v3"].map((k) => h("td", { class: "n" }, r[k] ?? "")))))));
+
+    const download = () => saveFile(`bse_${state.code}_${new Date().toISOString().slice(0, 10)}.json`,
+      JSON.stringify({ scripcode: state.code, fetchedAt: new Date().toISOString(),
+        responses: Object.fromEntries(DASH.map((id) => [id, { url: R[id].url, status: R[id].status, data: R[id].data, error: R[id].error }])) }, null, 2), "application/json");
+
+    views.scrip.replaceChildren(title, h("div", { class: "grid" },
+      card("Intraday", "StockReachGraphCas", chart, "wide"),
+      card("Day range", "getScripHeaderData", (d) => kv([["Open", d.Header.Open], ["High", d.Header.High], ["Low", d.Header.Low], ["Previous close", d.Header.PrevClose]])),
+      card("52-week / week / month", "HighLow", (d) => kv([["52-wk high", d.Fifty2WkHigh_unadj], ["52-wk low", d.Fifty2WkLow_unadj], ["Week high / low", d.WeekHighLow], ["Month high / low", d.MonthHighLow]])),
+      card("Trading", ["StockTrading", "SecurityPosition", "PriceBand"], (t, s, p) => kv([
+        ["WAP", t.WAP], ["Turnover", t.Turnover && `${t.Turnover} ${t.Turnoverin || ""}`], ["Traded qty", t.TTQ], ["2-wk avg qty", t.TwoWkAvgQty && `${t.TwoWkAvgQty} ${t.TwoWkAvgQtyin || ""}`],
+        ["Delivered qty", s.DeliverableQty], ["Delivery % of traded", s.PcDQ_TQ], ["As of", s.TradeDate],
+        ["Price band (lower / upper)", p.LowerT && `${p.LowerT} / ${p.UpperT}`], ["Band %", p.PBpcUC && `${p.PBpcLC}% / ${p.PBpcUC}%`], ["Circuit limit", t.CktLimit], ["Ex date", t.ExDate],
+        ["Market cap (Rs Cr)", t.MktCapFull], ["Free-float mcap (Rs Cr)", t.MktCapFF]])),
+      card("Valuation and ratios", "ComHeadernew_par", () => h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, ""), h("th", { class: "n" }, "Standalone"), h("th", { class: "n" }, "Consolidated"))),
+        h("tbody", {}, ratio("EPS", "EPS", "ConEPS"), ratio("Cash EPS", "CEPS", "ConCEPS"), ratio("PE", "PE", "ConPE"), ratio("PB", "PB", "ConPB"),
+          ratio("ROE %", "ROE", "ConROE"), ratio("OPM %", "OPM", "ConOPM"), ratio("NPM %", "NPM", "ConNPM")))),
+      card("Classification", "ComHeadernew_par", (d) => kv([["Sector", d.Sector], ["Industry (new)", d.IndustryNew], ["Industry", d.Industry], ["Industry group", d.IGroup], ["Sub-group", d.ISubGroup],
+        ["Index", d.Index], ["Group", d.Group], ["Face value", d.FaceVal], ["Settlement", d.SetlType]])),
+      card("Market depth", "MarketDepth", (d) => h("table", {},
+        h("thead", {}, h("tr", {}, ...["Bid qty", "Bid", "Ask", "Ask qty"].map((t, i) => h("th", { class: "n" }, t)))),
+        h("tbody", {}, ...[1, 2, 3, 4, 5].map((i) => h("tr", {}, ...[`BQty${i}`, `BPrice${i}`, `SPrice${i}`, `SQty${i}`].map((k) => h("td", { class: "n" }, d[k] ?? "")))),
+          h("tr", {}, h("td", { class: "n" }, h("b", {}, d.TotalBQty)), h("td", {}, "total"), h("td", {}, "total"), h("td", { class: "n" }, h("b", {}, d.TotalSQty)))))),
+      resultsCard,
+      card("Flags and cautions", ["getScripHeaderData", "ScripwiseCautionaryMsg"], flags),
+      card("Announcements", NEWS, (d) => (Array.isArray(d) && d.length
+        ? h("table", {}, h("tbody", {}, ...d.map((n) => h("tr", {}, h("td", {}, n.Newsdt), h("td", {}, n.NewsSubj)))))
+        : h("p", { class: "muted" }, "None returned.")), "wide"),
+      card("Peers (Rs Cr)", "EQPeerGp", (d) => {
+        const cols = ["Name", "scrip_cd", "LTP", "Change", "PE", "PB", "EPS", "Revenue", "PAT", "OPM", "NPM", "w52hi", "w52lo", "Results_QuarterName"];
+        return h("table", {}, h("thead", {}, h("tr", {}, ...cols.map((c) => h("th", {}, c === "Change" ? "Chg %" : c)))),
+          h("tbody", {}, ...(d.Table || []).map((r) => h("tr", {}, ...cols.map((c) => h("td", {}, show(r[c])))))));
+      }, "wide")),
+      h("div", { class: "bar" }, h("button", { type: "button", onclick: download }, "Download all as JSON")),
+      h("details", {}, h("summary", {}, "Raw responses"), ...DASH.map((id) => {
+        const r = R[id];
+        return h("details", {}, h("summary", { class: r.ok ? "" : "err" }, `${id} · ${r.status} · ${r.ms} ms · ${r.bytes} chars`),
+          h("div", { class: "muted" }, r.url), h("pre", {}, r.ok ? pretty(r.data) : r.error));
+      })));
+  }
+
+  // ---------------------------------------------------------------- Financials tab
+  const finQ = h("input", { size: 7, placeholder: "e.g. 130.00" });
+  const finN = h("input", { type: "number", min: 1, max: 12, value: 5, style: "width:60px" });
+  const finOut = h("div", {});
+  let finTable = null;
+  const LINE = { sales: "Net Sales/Revenue From Operations", cmc: "Cost of Materials Consumed", purch: "Purchases of stock-in-trade",
+    inv: "Changes in inventories of finished goods, work-in-progress and stock-in-trade", emp: "Employee benefit expense", oth: "Other Expenses",
+    pbt: "Profit (+)/ Loss (-) from Ordinary Activities before Tax", tax: "Tax", pat: "Net Profit (+)/ Loss (-) from Ordinary Activities after Tax" };
+
+  views.fin.append(
+    h("p", { class: "muted" }, "Quarterly P&L from BSE's results page, as originally filed (later restatements are not applied). Expenses are negative. BSE labels these amounts Rs million; check the SEBI summary in the API console if a company reports differently."),
+    h("div", { class: "row" }, h("label", { class: "f" }, "Latest quarter id", finQ), h("label", { class: "f" }, "Quarters", finN),
+      h("button", { class: "primary", type: "button", onclick: () => loadFin() }, "Load"),
+      h("button", { type: "button", onclick: () => finTable && saveFile(`bse_${state.code}_pnl.csv`, toCsv(finTable.rows, finTable.cols), "text/csv") }, "Download CSV")),
+    finOut);
+
+  function finReset() {
+    finQ.value = state.quarter;
+    finTable = null;
+    finOut.replaceChildren(h("p", { class: "muted" }, state.quarter ? `Latest quarter for ${state.code}: id ${state.quarter}. Press Load.` : "Quarter id not found from the results tab; type one (130.00 = Jun-26, one step per quarter)."));
+  }
+
+  async function loadFin() {
+    if (!state.code) return finOut.replaceChildren(h("p", { class: "err" }, "Fetch a scrip first."));
+    const latest = num(finQ.value), n = Math.min(12, Math.max(1, parseInt(finN.value, 10) || 5));
+    if (!isFinite(latest)) return finOut.replaceChildren(h("p", { class: "err" }, "Enter a numeric quarter id such as 130.00."));
+    finOut.replaceChildren(h("p", { class: "muted" }, "Loading…"));
+    const ids = Array.from({ length: n }, (_, i) => (latest - i).toFixed(2));
+    const out = await Promise.all(ids.map((q) => call(byId[DETAIL], { Scrip_cd: state.code, Qtr: q })));
+    const cols = [];
+    out.forEach((r, i) => {
+      const rows = (r.ok && r.data.table1) || [];
+      if (!rows.length) return;
+      const meta = (k) => (rows.find((x) => x.fld_desc === k) || {}).Value;
+      cols.push({ q: ids[i], end: meta("Date End"), type: meta("Type"),
+        lines: new Map(rows.filter((x) => x.Header !== "2").map((x) => [x.fld_desc, num(x.Value)])) });
+    });
+    const failed = out.filter((r) => !r.ok);
+    if (!cols.length) return finOut.replaceChildren(h("p", { class: "err" }, failed.length ? failed[0].error : "BSE returned no rows for those quarter ids."));
+    const names = [...new Set(cols.flatMap((c) => [...c.lines.keys()]))];
+    const fmt = (v) => (isFinite(v) ? v.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "—");
+    const pct = (v) => (isFinite(v) ? `${(v * 100).toFixed(1)}%` : "—");
+    const get = (c, key) => c.lines.get(LINE[key]);
+    const ebitda = (c) => { // only when every component line is present: a missing line would silently skew it
+      const parts = ["sales", "cmc", "purch", "inv", "emp", "oth"].map((k) => get(c, k));
+      return parts.every(isFinite) ? parts.reduce((a, b) => a + b, 0) : NaN;
+    };
+    const derived = [
+      ["EBITDA (derived)", (c) => fmt(ebitda(c))],
+      ["EBITDA margin (derived)", (c) => pct(ebitda(c) / get(c, "sales"))],
+      ["PBT margin (derived)", (c) => pct(get(c, "pbt") / get(c, "sales"))],
+      ["Tax rate (derived)", (c) => pct(-get(c, "tax") / get(c, "pbt"))],
+      ["PAT margin (derived)", (c) => pct(get(c, "pat") / get(c, "sales"))],
+    ];
+    const csvRows = names.map((nm) => Object.fromEntries([["Line", nm], ...cols.map((c) => [c.end || c.q, c.lines.get(nm)])]));
+    finTable = { rows: csvRows, cols: ["Line", ...cols.map((c) => c.end || c.q)] };
+    finOut.replaceChildren(
+      failed.length ? h("p", { class: "err" }, `${failed.length} quarter call(s) failed: ${failed[0].error}`) : "",
+      h("div", { class: "scroll" }, h("table", {},
+        h("thead", {}, h("tr", {}, h("th", {}, "Line"), ...cols.map((c) => h("th", { class: "n" }, `${c.end || "?"} `, h("div", { class: "muted" }, `${c.type || ""} · id ${c.q}`))))),
+        h("tbody", {}, ...names.map((nm) => h("tr", {}, h("td", {}, nm), ...cols.map((c) => h("td", { class: "n" }, fmt(c.lines.get(nm)))))),
+          ...derived.map(([label, f]) => h("tr", { class: "derived" }, h("td", {}, label), ...cols.map((c) => h("td", { class: "n" }, f(c))))))),
+      h("p", { class: "muted" }, "Derived rows are computed here, not returned by BSE. EBITDA = sales + materials + stock-in-trade purchases + inventory change + employee + other expenses (expenses are negative); shown only when all six lines exist.")));
+  }
+
+  // ---------------------------------------------------------------- API console tab
+  const consoleApi = (() => {
+    const sel = h("select", { onchange: () => pick() },
+      ...[...new Set(ENDPOINTS.map((e) => e.group))].map((grp) => h("optgroup", { label: grp }, ...ENDPOINTS.filter((e) => e.group === grp).map((e) => h("option", { value: e.id }, e.id)))));
+    const desc = h("p", { class: "muted" });
+    const paramBox = h("div", { class: "row", style: "flex-direction:column;align-items:stretch" });
+    const out = h("div", {});
+    let inputs = {}, last = null, mode = "json";
+
+    function pick() {
+      const e = byId[sel.value];
+      desc.textContent = "Returns: " + e.returns;
+      inputs = {};
+      paramBox.replaceChildren(...Object.entries(fill(e.params)).map(([k, v]) => {
+        const input = h("input", { value: v });
+        inputs[k] = input;
+        return h("label", { class: "f" }, k, input);
+      }));
+      out.replaceChildren();
+    }
+    function draw() {
+      if (!last) return;
+      const rows = rowsFrom(last.data);
+      const cols = rows ? [...new Set(rows.slice(0, 50).flatMap((r) => Object.keys(r)))] : [];
+      out.replaceChildren(
+        h("div", { class: last.ok ? "" : "err" }, `${last.ok ? "OK" : "Error"} · HTTP ${last.status} · ${last.ms} ms · ${last.bytes} chars`),
+        h("div", { class: "muted" }, last.url),
+        h("div", { class: "bar" },
+          h("button", { type: "button", onclick: () => navigator.clipboard?.writeText(last.url) }, "Copy URL"),
+          h("button", { type: "button", disabled: !last.ok, onclick: () => saveFile(`${sel.value}.json`, JSON.stringify(last.data, null, 2), "application/json") }, "Download JSON"),
+          rows ? h("button", { type: "button", onclick: () => { mode = mode === "json" ? "table" : "json"; draw(); } }, mode === "json" ? "Show as table" : "Show as JSON") : "",
+          rows && mode === "table" ? h("button", { type: "button", onclick: () => saveFile(`${sel.value}.csv`, toCsv(rows, cols), "text/csv") }, "Download CSV") : ""),
+        last.ok ? (rows && mode === "table" ? dataTable(rows, cols).node : h("pre", {}, pretty(last.data))) : h("pre", {}, last.error));
+    }
+    async function send() {
+      out.replaceChildren(h("p", { class: "muted" }, "Loading…"));
+      last = await call(byId[sel.value], Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value])));
+      mode = "json";
+      draw();
+    }
+    views.console.append(h("div", { class: "console" },
+      h("div", {}, h("label", { class: "f" }, "Endpoint", sel), desc, paramBox,
+        h("div", { class: "bar" }, h("button", { class: "primary", type: "button", onclick: send }, "Send")),
+        h("p", { class: "muted" }, "Parameters default to the current scrip. BSE expects every parameter to be present, even when empty.")),
+      out));
+    pick();
+    return { refresh: pick };
+  })();
+
+  // ---------------------------------------------------------------- Find scrips tab
+  const fSeg = h("select", {}, ...SEGMENTS.map(([v, l]) => h("option", { value: v }, l)));
+  const fStatus = h("select", {}, ...[["", "Any"], ["Active", "Active"], ["Suspended", "Suspended"], ["Delisted", "Delisted"]].map(([v, l]) => h("option", { value: v }, l)));
+  const fGroup = h("select", {}, h("option", { value: "" }, "Any"));
+  const fName = h("input", { placeholder: "name contains" });
+  const fCode = h("input", { placeholder: "exact code", size: 8 });
+  const fOut = h("div", {});
+  let fTable = null, groupsLoaded = false;
+  const FCOLS = ["SCRIP_CD", "scrip_id", "Scrip_Name", "Issuer_Name", "Segment", "Status", "GROUP", "FACE_VALUE", "ISIN_NUMBER", "Mktcap"];
+
+  async function findOpened() {
+    if (groupsLoaded) return;
+    groupsLoaded = true;
+    const r = await call(byId.ddlGroup, { flag: "0" });
+    if (r.ok && Array.isArray(r.data)) fGroup.append(...r.data.map((x) => h("option", { value: x.GROUP_CODE }, x.GROUP_CODE)));
+  }
+  async function findRun() {
+    fOut.replaceChildren(h("p", { class: "muted" }, "Loading… (large segments can take a while)"));
+    const r = await call(byId.ListofScripData_new, { Group: fGroup.value, Scripcode: fCode.value.trim(), segment: fSeg.value, status: fStatus.value, scripName: fName.value.trim() });
+    if (!r.ok) return fOut.replaceChildren(h("p", { class: "err" }, r.error));
+    const rows = Array.isArray(r.data) ? r.data : [];
+    const openable = ["Equity", "EQT0"].includes(fSeg.value);
+    fTable = dataTable(rows, FCOLS, openable ? { onRow: (row) => { qBox.value = row.SCRIP_CD; loadScrip(row.SCRIP_CD); } } : {});
+    fOut.replaceChildren(h("p", { class: "muted" }, `${rows.length} rows in ${r.ms} ms (${(r.bytes / 1048576).toFixed(1)} MB).${openable ? " Click a row to open it in the Scrip tab." : ""}`),
+      h("div", { class: "bar" }, h("button", { type: "button", onclick: () => saveFile("bse_scrips.csv", toCsv(fTable.rows, FCOLS), "text/csv") }, "Download CSV (current filter)")),
+      fTable.node);
+  }
+  views.find.append(
+    h("p", { class: "muted" }, "Backed by BSE's List Of Securities page. Preference Shares, Debentures and Commercial Papers return tens of thousands of rows; add a name or status filter first."),
+    h("div", { class: "row" }, h("label", { class: "f" }, "Segment", fSeg), h("label", { class: "f" }, "Status", fStatus), h("label", { class: "f" }, "Group", fGroup),
+      h("label", { class: "f" }, "Name", fName), h("label", { class: "f" }, "Code", fCode), h("button", { class: "primary", type: "button", onclick: findRun }, "Search")),
+    fOut);
+
+  // ---------------------------------------------------------------- start
+  const saved = load();
+  qBox.value = saved.code || "";
+  finReset();
+  openTab(saved.tab && views[saved.tab] ? saved.tab : "scrip");
+  views.scrip.append(h("p", { class: "muted" }, "Enter a scrip code (e.g. 500002) or a name, symbol or ISIN above and press Fetch."));
+  say("Ready.");
+  qBox.focus();
+})();
