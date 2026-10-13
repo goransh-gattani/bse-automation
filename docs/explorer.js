@@ -374,6 +374,13 @@ details{margin:4px 0}summary{cursor:pointer}
       h("label", { class: "f" }, "Period", h("select", { onchange: (e) => { ann.range = +e.target.value; annLoad(false); } }, ...ANN_RANGES.map(([l], i) => h("option", { value: i, selected: i === ann.range }, l))))),
     annBody);
 
+  // BSE headlines carry HTML (<BR>, entities). Turn line breaks into real ones and drop any other
+  // tag; DOMParser builds an inert document, so nothing in the text is ever run or loaded.
+  const plain = (v) => {
+    const withBreaks = show(v).replace(/<\s*br\s*\/?>/gi, "\n");
+    return (new DOMParser().parseFromString(withBreaks, "text/html").body.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
+  };
+
   // "<Company>_<YYYY-MM-DD>.pdf", or the scrip code when BSE gives no company name.
   const pdfFileName = (row) => {
     const company = String(row.SLONGNAME || "").replace(/[^A-Za-z0-9 .&()-]/g, "").replace(/\s+/g, " ").trim().replace(/\.+$/, "");
@@ -406,7 +413,7 @@ details{margin:4px 0}summary{cursor:pointer}
       ann.error ? h("p", { class: "err" }, ann.error) : "",
       ann.rows.length ? h("div", { class: "scroll" }, h("table", {},
         h("thead", {}, h("tr", {}, ...["Date", "Headline", "Category", "PDF"].map((t) => h("th", {}, t)))),
-        h("tbody", {}, ...ann.rows.map((r) => h("tr", {}, h("td", {}, show(r.NEWS_DT || r.DT_TM)), h("td", {}, show(r.HEADLINE || r.NEWSSUB)),
+        h("tbody", {}, ...ann.rows.map((r) => h("tr", {}, h("td", {}, show(r.NEWS_DT || r.DT_TM)), h("td", { style: "white-space:pre-line" }, plain(r.HEADLINE || r.NEWSSUB)),
           h("td", {}, show(r.SUBCATNAME || r.CATEGORYNAME)), h("td", {}, pdfCell(r)))))))
         : h("p", { class: "muted" }, ann.busy ? "Loading…" : ann.error ? "" : "No announcements in this period."),
       ann.rows.length ? h("p", { class: "muted" }, `Showing ${ann.rows.length} of ${ann.total}.`) : "",
