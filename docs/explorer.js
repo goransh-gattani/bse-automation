@@ -280,38 +280,59 @@ details{margin:4px 0}summary{cursor:pointer}
       `${x.scripName} · ${x.shortName} · ${x.strSricpCode} · ${x.Type}`)));
   }
 
+  // Every endpoint is requested at once and each card fills in as soon as its own answer arrives.
   async function loadScrip(code) {
     const token = ++state.token;
     Object.assign(state, { code, name: "", quarter: "", res: {} });
     remember({ code });
     qBox.value = code;
-    say(`Fetching ${DASH.length} endpoints for ${code}…`);
-    views.scrip.replaceChildren(h("p", { class: "muted" }, "Loading…"));
-    const out = await Promise.all(DASH.map((id) => call(byId[id], fill(byId[id].params))));
-    if (token !== state.token) return; // a newer lookup superseded this one
-    DASH.forEach((id, i) => { state.res[id] = out[i]; });
-    state.name = g(state.res.getScripHeaderData, "data.Cmpname.FullN") || "";
-    state.quarter = (/qtr=([\d.]+)/.exec(g(state.res[RESULTS], "data.resultinS.0.LLQ") || "") || [])[1] || "";
-    const failed = DASH.filter((id) => !state.res[id].ok).length;
-    say(failed ? `${failed} of ${DASH.length} calls failed (details on each card).` : `Loaded ${DASH.length} endpoints.`, failed > 0);
-    renderScrip();
     finReset();
-    consoleApi.refresh();
+    renderScrip();
     openTab("scrip");
-    detectLatest(token);
+    let done = 0, failed = 0;
+    const progress = () => say(done < DASH.length ? `Loaded ${done} of ${DASH.length} endpoints…`
+      : failed ? `${failed} of ${DASH.length} calls failed (details on each card).` : `Loaded ${DASH.length} endpoints.`, done === DASH.length && failed > 0);
+    progress();
+    await Promise.all(DASH.map(async (id) => {
+      const r = await call(byId[id], fill(byId[id].params));
+      if (token !== state.token) return; // a newer lookup superseded this one
+      state.res[id] = r;
+      done++;
+      if (!r.ok) failed++;
+      if (id === "getScripHeaderData") state.name = g(r.data, "Cmpname.FullN") || "";
+      repaint(id);
+      if (id === RESULTS) { // the latest quarter's link is on the results tab; check it as soon as it is known
+        state.quarter = (/qtr=([\d.]+)/.exec(g(r.data, "resultinS.0.LLQ") || "") || [])[1] || "";
+        detectLatest(token);
+      }
+      progress();
+    }));
+    if (token === state.token) consoleApi.refresh();
   }
 
   // ---------------------------------------------------------------- Scrip tab
-  const errText = (r) => (r ? r.error : "Not fetched");
-  // A card is built from one or more endpoints; if any of them failed it shows that error instead.
-  function card(title, ids, build, cls) {
-    const list = [].concat(ids).map((id) => state.res[id]);
-    const bad = list.find((r) => !r || !r.ok);
+  // A slot is one box on the page fed by one or more endpoints. It says "Loading…" until all of
+  // them have answered, then shows the error of the first that failed, or the built content.
+  // With raw=true it is repainted on every answer and decides for itself what is ready.
+  const slots = [];
+  function paint(e) {
+    const list = e.ids.map((id) => state.res[id]);
     let body;
-    try { body = bad ? h("p", { class: "err" }, errText(bad)) : build(...list.map((r) => r.data)); }
-    catch (err) { body = h("p", { class: "err" }, `Could not display this data: ${err.message}`); }
-    return h("section", { class: `card ${cls || ""}` }, h("h3", {}, title), body);
+    try {
+      if (e.raw) body = e.render();
+      else if (list.some((r) => !r)) body = h("p", { class: "muted" }, "Loading…");
+      else { const bad = list.find((r) => !r.ok); body = bad ? h("p", { class: "err" }, bad.error) : e.render(...list.map((r) => r.data)); }
+    } catch (err) { body = h("p", { class: "err" }, `Could not display this data: ${err.message}`); }
+    e.box.replaceChildren(body);
   }
+  function slot(ids, render, raw) {
+    const e = { ids: [].concat(ids), box: h("div", {}), render, raw };
+    slots.push(e);
+    paint(e);
+    return e.box;
+  }
+  const repaint = (id) => slots.filter((e) => e.ids.includes(id)).forEach(paint);
+  const card = (title, ids, build, cls) => h("section", { class: `card ${cls || ""}` }, h("h3", {}, title), slot(ids, build));
   const kv = (rows) => h("table", { class: "kv" }, h("tbody", {}, ...rows.filter(([, v]) => !blank(v)).map(([k, v]) => h("tr", {}, h("td", {}, k), h("td", {}, show(v))))));
 
   function chart(data) {
@@ -337,23 +358,28 @@ details{margin:4px 0}summary{cursor:pointer}
   }
 
   function renderScrip() {
+    slots.length = 0;
     const R = state.res, D = (id) => g(R[id], "data");
-    const head = D("getScripHeaderData"), com = D("ComHeadernew_par");
-    const chg = g(head, "CurrRate.Chg"), pc = g(head, "CurrRate.PcChg");
-    const dir = num(chg) < 0 ? "dn" : num(chg) > 0 ? "up" : "";
-    const link = g(head, "Cmpname.SEOUrlEQ");
-    const title = h("div", {},
-      h("h2", {}, g(head, "Cmpname.FullN") || g(com, "SecurityId") || state.code),
-      h("div", { class: "muted" }, [g(com, "SecurityId"), state.code, g(com, "ISIN"), g(com, "Group") && `Group ${g(com, "Group")}`, g(com, "Sector"), g(com, "IndustryNew")].filter(Boolean).join(" · "),
-        link ? [" · ", h("a", { href: SITE + link, target: "_blank", rel: "noopener" }, "Open on BSE")] : ""),
-      head ? h("div", {}, h("span", { class: "price" }, g(head, "Header.LTP") || g(head, "CurrRate.LTP") || ""), " ",
-        h("span", { class: dir }, `${chg || ""} (${pc || ""}%)`), " ", h("span", { class: "muted" }, g(head, "Header.Ason") || "")) : h("p", { class: "err" }, errText(R.getScripHeaderData)));
+    const title = slot(["getScripHeaderData", "ComHeadernew_par"], () => {
+      const head = D("getScripHeaderData"), com = D("ComHeadernew_par");
+      const chg = g(head, "CurrRate.Chg"), pc = g(head, "CurrRate.PcChg");
+      const dir = num(chg) < 0 ? "dn" : num(chg) > 0 ? "up" : "";
+      const link = g(head, "Cmpname.SEOUrlEQ");
+      return h("div", {},
+        h("h2", {}, g(head, "Cmpname.FullN") || g(com, "SecurityId") || state.code),
+        h("div", { class: "muted" }, [g(com, "SecurityId"), state.code, g(com, "ISIN"), g(com, "Group") && `Group ${g(com, "Group")}`, g(com, "Sector"), g(com, "IndustryNew")].filter(Boolean).join(" · "),
+          link ? [" · ", h("a", { href: SITE + link, target: "_blank", rel: "noopener" }, "Open on BSE")] : ""),
+        !R.getScripHeaderData ? h("p", { class: "muted" }, "Loading price…")
+          : head ? h("div", {}, h("span", { class: "price" }, g(head, "Header.LTP") || g(head, "CurrRate.LTP") || ""), " ",
+            h("span", { class: dir }, `${chg || ""} (${pc || ""}%)`), " ", h("span", { class: "muted" }, g(head, "Header.Ason") || ""))
+            : h("p", { class: "err" }, R.getScripHeaderData.error));
+    }, true);
 
-    const ratio = (label, a, b) => h("tr", {}, h("td", {}, label), h("td", { class: "n" }, show(g(com, a)) || "—"), h("td", { class: "n" }, show(g(com, b)) || "—"));
-    const flags = () => {
+    const ratio = (c, label, a, b) => h("tr", {}, h("td", {}, label), h("td", { class: "n" }, show(g(c, a)) || "—"), h("td", { class: "n" }, show(g(c, b)) || "—"));
+    const flags = (head, cm) => {
       const hd = g(head, "Header") || {};
       const items = ["ASMText", "GSMText", "EMSText", "SMSText", "IRPText", "DisplayText"].filter((k) => hd[k]).map((k) => `${k}: ${hd[k]}`);
-      const caution = [...(D("ScripwiseCautionaryMsg")?.Table || []), ...(D("ScripwiseCautionaryMsg")?.Table1 || [])].map(show);
+      const caution = [...(cm?.Table || []), ...(cm?.Table1 || [])].map(show);
       const all = [...items, ...caution];
       return all.length ? h("ul", {}, ...all.map((t) => h("li", {}, t))) : h("p", { class: "muted" }, "None reported.");
     };
@@ -364,7 +390,7 @@ details{margin:4px 0}summary{cursor:pointer}
 
     const download = () => saveFile(`bse_${state.code}_${new Date().toISOString().slice(0, 10)}.json`,
       JSON.stringify({ scripcode: state.code, fetchedAt: new Date().toISOString(),
-        responses: Object.fromEntries(DASH.map((id) => [id, { url: R[id].url, status: R[id].status, data: R[id].data, error: R[id].error }])) }, null, 2), "application/json");
+        responses: Object.fromEntries(DASH.filter((id) => R[id]).map((id) => [id, { url: R[id].url, status: R[id].status, data: R[id].data, error: R[id].error }])) }, null, 2), "application/json");
 
     views.scrip.replaceChildren(title, h("div", { class: "grid" },
       card("Intraday", "StockReachGraphCas", chart, "wide"),
@@ -375,9 +401,9 @@ details{margin:4px 0}summary{cursor:pointer}
         ["Delivered qty", s.DeliverableQty], ["Delivery % of traded", s.PcDQ_TQ], ["As of", s.TradeDate],
         ["Price band (lower / upper)", p.LowerT && `${p.LowerT} / ${p.UpperT}`], ["Band %", p.PBpcUC && `${p.PBpcLC}% / ${p.PBpcUC}%`], ["Circuit limit", t.CktLimit], ["Ex date", t.ExDate],
         ["Market cap (Rs Cr)", t.MktCapFull], ["Free-float mcap (Rs Cr)", t.MktCapFF]])),
-      card("Valuation and ratios", "ComHeadernew_par", () => h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, ""), h("th", { class: "n" }, "Standalone"), h("th", { class: "n" }, "Consolidated"))),
-        h("tbody", {}, ratio("EPS", "EPS", "ConEPS"), ratio("Cash EPS", "CEPS", "ConCEPS"), ratio("PE", "PE", "ConPE"), ratio("PB", "PB", "ConPB"),
-          ratio("ROE %", "ROE", "ConROE"), ratio("OPM %", "OPM", "ConOPM"), ratio("NPM %", "NPM", "ConNPM")))),
+      card("Valuation and ratios", "ComHeadernew_par", (c) => h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, ""), h("th", { class: "n" }, "Standalone"), h("th", { class: "n" }, "Consolidated"))),
+        h("tbody", {}, ratio(c, "EPS", "EPS", "ConEPS"), ratio(c, "Cash EPS", "CEPS", "ConCEPS"), ratio(c, "PE", "PE", "ConPE"), ratio(c, "PB", "PB", "ConPB"),
+          ratio(c, "ROE %", "ROE", "ConROE"), ratio(c, "OPM %", "OPM", "ConOPM"), ratio(c, "NPM %", "NPM", "ConNPM")))),
       card("Classification", "ComHeadernew_par", (d) => kv([["Sector", d.Sector], ["Industry (new)", d.IndustryNew], ["Industry", d.Industry], ["Industry group", d.IGroup], ["Sub-group", d.ISubGroup],
         ["Index", d.Index], ["Group", d.Group], ["Face value", d.FaceVal], ["Settlement", d.SetlType]])),
       card("Market depth", "MarketDepth", (d) => h("table", {},
@@ -395,11 +421,11 @@ details{margin:4px 0}summary{cursor:pointer}
           h("tbody", {}, ...(d.Table || []).map((r) => h("tr", {}, ...cols.map((c) => h("td", {}, show(r[c])))))));
       }, "wide")),
       h("div", { class: "bar" }, h("button", { type: "button", onclick: download }, "Download all as JSON")),
-      h("details", {}, h("summary", {}, "Raw responses"), ...DASH.map((id) => {
+      h("details", {}, h("summary", {}, "Raw responses"), ...DASH.map((id) => slot(id, () => {
         const r = R[id];
-        return h("details", {}, h("summary", { class: r.ok ? "" : "err" }, `${id} · ${r.status} · ${r.ms} ms · ${r.bytes} chars`),
+        return !r ? h("p", { class: "muted" }, `${id} · loading…`) : h("details", {}, h("summary", { class: r.ok ? "" : "err" }, `${id} · ${r.status} · ${r.ms} ms · ${r.bytes} chars`),
           h("div", { class: "muted" }, r.url), h("pre", {}, r.ok ? pretty(r.data) : r.error));
-      })));
+      }, true))));
   }
 
   // ---------------------------------------------------------------- Financials tab
@@ -435,7 +461,9 @@ details{margin:4px 0}summary{cursor:pointer}
       h("button", { type: "button", onclick: () => finTable && saveFile(`bse_${state.code}_pnl.csv`, toCsv(finTable.rows, finTable.cols), "text/csv") }, "Download CSV")),
     finOut);
 
+  let finDefault = "", finToken = 0;
   function fillQuarters(latest, tag, keep) { // keep: a quarter the person already picked
+    finDefault = latest.toFixed(2);
     finQ.replaceChildren(...Array.from({ length: 16 }, (_, i) => latest - i).map((id) =>
       h("option", { value: id.toFixed(2) }, idLabel(id) + (id === latest ? `  (${tag})` : ""))));
     if (keep && [...finQ.options].some((o) => o.value === keep)) finQ.value = keep;
@@ -444,6 +472,7 @@ details{margin:4px 0}summary{cursor:pointer}
     const fromBse = isFinite(num(state.quarter));
     finQ.value = "";
     fillQuarters(fromBse ? Math.round(num(state.quarter)) : latestGuess(), fromBse ? "latest on BSE" : "latest ended");
+    finToken++;
     finNote.textContent = state.code ? "Checking which quarter is latest…" : "";
     finTable = null;
     finOut.replaceChildren(h("p", { class: "muted" }, `Pick the latest quarter and how many to show, then press Load. Quarters BSE has no results for yet are skipped.`));
@@ -464,7 +493,7 @@ details{margin:4px 0}summary{cursor:pointer}
     }
     const latest = Math.max(...found);
     state.quarter = latest.toFixed(2);
-    const picked = finQ.value === base.toFixed(2) ? "" : finQ.value; // untouched default moves to the new latest
+    const picked = finQ.value === finDefault ? "" : finQ.value; // untouched default moves to the new latest
     fillQuarters(latest, "latest filed", picked);
     const end = (((out[ids.indexOf(latest)].data || {}).table1 || []).find((x) => x.fld_desc === "Date End") || {}).Value;
     finNote.textContent = `Latest filed quarter: ${endLabel(end) || idLabel(latest)}${end ? ` (ended ${end})` : ""}.`;
@@ -475,17 +504,22 @@ details{margin:4px 0}summary{cursor:pointer}
     const latest = num(finQ.value), n = Math.min(12, Math.max(1, parseInt(finN.value, 10) || 5));
     finOut.replaceChildren(h("p", { class: "muted" }, "Loading…"));
     const ids = Array.from({ length: n }, (_, i) => (latest - i).toFixed(2));
-    const out = await Promise.all(ids.map((q) => call(byId[DETAIL], { Scrip_cd: state.code, Qtr: q })));
+    const token = ++finToken;
+    const out = ids.map(() => null); // null until that quarter has answered
+    const draw = () => {
     const cols = [];
     out.forEach((r, i) => {
+      if (!r) return;
       const rows = (r.ok && r.data.table1) || [];
       if (!rows.length) return;
       const meta = (k) => (rows.find((x) => x.fld_desc === k) || {}).Value;
       cols.push({ q: ids[i], end: meta("Date End"), type: meta("Type"),
         lines: new Map(rows.filter((x) => x.Header !== "2").map((x) => [x.fld_desc, num(x.Value)])) });
     });
-    const failed = out.filter((r) => !r.ok);
-    if (!cols.length) return finOut.replaceChildren(h("p", { class: "err" }, failed.length ? failed[0].error : "BSE returned no results for those quarters."));
+    const failed = out.filter((r) => r && !r.ok);
+    const waiting = out.filter((r) => !r).length;
+    if (!cols.length) return finOut.replaceChildren(waiting ? h("p", { class: "muted" }, `Loading… (${ids.length - waiting} of ${ids.length} quarters answered)`)
+      : h("p", { class: "err" }, failed.length ? failed[0].error : "BSE returned no results for those quarters."));
     const names = [...new Set(cols.flatMap((c) => [...c.lines.keys()]))];
     const fmt = (v) => (isFinite(v) ? v.toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "—");
     const pct = (v) => (isFinite(v) ? `${(v * 100).toFixed(1)}%` : "—");
@@ -506,11 +540,17 @@ details{margin:4px 0}summary{cursor:pointer}
     finTable = { rows: csvRows, cols: ["Line", ...cols.map(head)] };
     finOut.replaceChildren(
       failed.length ? h("p", { class: "err" }, `${failed.length} quarter call(s) failed: ${failed[0].error}`) : "",
+      waiting ? h("p", { class: "muted" }, `Loading ${waiting} more quarter(s)…`) : "",
       h("div", { class: "scroll" }, h("table", {},
         h("thead", {}, h("tr", {}, h("th", {}, "Line"), ...cols.map((c) => h("th", { class: "n", title: `BSE quarter id ${c.q}` }, endLabel(c.end) || c.end || "?", h("div", { class: "muted" }, `${c.end || ""} · ${c.type || ""}`))))),
         h("tbody", {}, ...names.map((nm) => h("tr", {}, h("td", {}, nm), ...cols.map((c) => h("td", { class: "n" }, fmt(c.lines.get(nm)))))),
           ...derived.map(([label, f]) => h("tr", { class: "derived" }, h("td", {}, label), ...cols.map((c) => h("td", { class: "n" }, f(c))))))),
       h("p", { class: "muted" }, "Derived rows are computed here, not returned by BSE. EBITDA = sales + materials + stock-in-trade purchases + inventory change + employee + other expenses (expenses are negative); shown only when all six lines exist.")));
+    };
+    await Promise.all(ids.map(async (q, i) => {
+      out[i] = await call(byId[DETAIL], { Scrip_cd: state.code, Qtr: q });
+      if (token === finToken) draw(); // a newer Load or another scrip makes this one stale
+    }));
   }
 
   // ---------------------------------------------------------------- API console tab
