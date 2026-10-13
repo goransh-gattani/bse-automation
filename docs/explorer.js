@@ -48,6 +48,8 @@
       "Peer table (Table[]): name, code, LTP, change %, EPS, PE, PB, revenue and PAT (Rs Cr), OPM, NPM, 52-week range, result quarter."],
     ["Scrip page", NEWS, "api", "TabResults_PAR/w", { scripcode: SC, tabtype: "NEWS" },
       "Recent announcements: Newsid, NewsSubj, Newsdt (JSON string, decoded here)."],
+    ["Filings", "AnnSubCategoryGetData", "api", "AnnSubCategoryGetData/w", { strCat: "-1", strPrevDate: "", strScrip: SC, strSearch: "P", strToDate: "", strType: "C", subcategory: "-1", pageno: "1" },
+      "Corporate announcements and filings from BSE's announcements page: Table[] rows (SCRIP_CD, SLONGNAME, NEWS_DT, HEADLINE, CATEGORYNAME, SUBCATNAME, ATTACHMENTNAME = the PDF) and Table1[0].ROWCNT = total rows. A page is about 50 rows; pageno selects it. strCat/subcategory -1 = all; strPrevDate/strToDate are YYYYMMDD."],
     ["Scrip page", RESULTS, "api", "TabResults_PAR/w", { scripcode: SC, tabtype: "RESULTS" },
       "Latest quarter, previous quarter and FY for revenue, net profit, EPS, cash EPS, OPM, NPM (Cr and millions) plus result-page links whose qtr= is the quarter id."],
     ["Scrip page", "ScripwiseCautionaryMsg", "api", "ScripwiseCautionaryMsg/w", { scripcode: SC },
@@ -74,7 +76,7 @@
   ].map(([group, id, base, path, params, returns]) => ({ group, id, base, path, params, returns }));
   const byId = Object.fromEntries(ENDPOINTS.map((e) => [e.id, e]));
   const DASH = ["getScripHeaderData", "ComHeadernew_par", "MarketDepth", "StockTrading", "HighLow", "PriceBand", "SecurityPosition",
-    "StockReachGraphCas", "EQPeerGp", NEWS, RESULTS, "ScripwiseCautionaryMsg", "LeftMenunew"];
+    "StockReachGraphCas", "EQPeerGp", RESULTS, "ScripwiseCautionaryMsg", "LeftMenunew"];
   const SEGMENTS = [["Equity", "Equity T+1"], ["EQT0", "Equity T+0"], ["MF", "MF/ETF"], ["HS", "Hybrid Security"], ["MB", "Municipal Bonds"],
     ["PreferenceShares", "Preference Shares"], ["Debentures and Bonds", "Debentures and Bonds"],
     ["Equity - Institutional Series", "Equity - Institutional Series"], ["Commercial Papers", "Commercial Papers"], ["SSE", "SSE"]];
@@ -289,6 +291,7 @@ details{margin:4px 0}summary{cursor:pointer}
     finReset();
     renderScrip();
     openTab("scrip");
+    annLoad(false);
     let done = 0, failed = 0;
     const progress = () => say(done < DASH.length ? `Loaded ${done} of ${DASH.length} endpoints…`
       : failed ? `${failed} of ${DASH.length} calls failed (details on each card).` : `Loaded ${DASH.length} endpoints.`, done === DASH.length && failed > 0);
@@ -357,6 +360,81 @@ details{margin:4px 0}summary{cursor:pointer}
       label(P, H - 6, hm(t0)), label(W - P, H - 6, hm(t1), "end"));
   }
 
+  // ---- Announcements: BSE's filings feed (the one behind the announcements page), with PDF links.
+  // The first load shows one page of x rows; "Load more" adds the next two pages (2x rows).
+  const PDF_BASE = SITE + "/xml-data/corpfiling/AttachHis/";
+  const ANN_CATS = [["All announcements", "-1", "-1"], ["Financial results", "Result", "Financial Results"]];
+  const ANN_RANGES = [["Last 12 months", 365], ["Last 3 years", 1095], ["Last 5 years", 1825]];
+  const ann = { cat: 0, range: 0, rows: [], total: 0, pages: 0, x: 0, busy: false, error: "", token: 0 };
+  const ymd = (d) => d.toISOString().slice(0, 10).replace(/-/g, "");
+  const annBody = h("div", {});
+  const annBox = h("div", {},
+    h("div", { class: "row" },
+      h("label", { class: "f" }, "Show", h("select", { onchange: (e) => { ann.cat = +e.target.value; annLoad(false); } }, ...ANN_CATS.map(([l], i) => h("option", { value: i }, l)))),
+      h("label", { class: "f" }, "Period", h("select", { onchange: (e) => { ann.range = +e.target.value; annLoad(false); } }, ...ANN_RANGES.map(([l], i) => h("option", { value: i }, l))))),
+    annBody);
+
+  // "<Company>_<YYYY-MM-DD>.pdf", or the scrip code when BSE gives no company name.
+  const pdfFileName = (row) => {
+    const company = String(row.SLONGNAME || "").replace(/[^A-Za-z0-9 .&()-]/g, "").replace(/\s+/g, " ").trim().replace(/\.+$/, "");
+    const day = String(row.NEWS_DT || row.DT_TM || "").replace(/\D/g, "").slice(0, 8).replace(/^(\d{4})(\d{2})(\d{2})$/, "$1-$2-$3");
+    return [company || row.SCRIP_CD || state.code, day].filter(Boolean).join("_") + ".pdf";
+  };
+  // On bseindia.com the PDF is fetched from the same site and saved under our name; on localhost
+  // the local proxy serves it as a download. If saving fails, the link just opens the PDF.
+  function savePdf(e) {
+    const link = e.currentTarget, label = link.textContent;
+    e.preventDefault();
+    link.textContent = "Saving…";
+    fetch(link.href)
+      .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.blob(); })
+      .then((blob) => saveFile(link.getAttribute("download"), blob, "application/pdf"))
+      .catch(() => window.open(link.href, "_blank", "noopener"))
+      .then(() => { link.textContent = label; });
+  }
+  function pdfCell(row) {
+    const name = String(row.ATTACHMENTNAME || "").trim();
+    if (!name) return "—";
+    const file = pdfFileName(row), url = PDF_BASE + encodeURIComponent(name);
+    return [h("a", { href: url, target: "_blank", rel: "noopener" }, "📄 View"), " ",
+      LOCAL ? h("a", { href: `/api/pdf?name=${encodeURIComponent(name)}&filename=${encodeURIComponent(file)}`, download: file }, "⬇ Download")
+        : h("a", { href: url, download: file, onclick: savePdf }, "⬇ Download")];
+  }
+  function drawAnn() {
+    const left = ann.total - ann.rows.length;
+    annBody.replaceChildren(
+      ann.error ? h("p", { class: "err" }, ann.error) : "",
+      ann.rows.length ? h("div", { class: "scroll" }, h("table", {},
+        h("thead", {}, h("tr", {}, ...["Date", "Headline", "Category", "PDF"].map((t) => h("th", {}, t)))),
+        h("tbody", {}, ...ann.rows.map((r) => h("tr", {}, h("td", {}, show(r.NEWS_DT || r.DT_TM)), h("td", {}, show(r.HEADLINE || r.NEWSSUB)),
+          h("td", {}, show(r.SUBCATNAME || r.CATEGORYNAME)), h("td", {}, pdfCell(r)))))))
+        : h("p", { class: "muted" }, ann.busy ? "Loading…" : ann.error ? "" : "No announcements in this period."),
+      ann.rows.length ? h("p", { class: "muted" }, `Showing ${ann.rows.length} of ${ann.total}.`) : "",
+      ann.rows.length && left > 0 ? h("button", { type: "button", disabled: ann.busy, onclick: () => annLoad(true) }, ann.busy ? "Loading…" : `Load ${Math.min(2 * ann.x, left)} more`) : "");
+  }
+  async function annLoad(more) {
+    const token = ++ann.token;
+    if (!more) Object.assign(ann, { rows: [], total: 0, pages: 0, x: 0 });
+    ann.busy = true;
+    ann.error = "";
+    drawAnn();
+    const now = new Date(), since = new Date(now.getTime() - ANN_RANGES[ann.range][1] * 864e5);
+    const pages = more ? [ann.pages + 1, ann.pages + 2] : [1];
+    const res = await Promise.all(pages.map((p) => call(byId.AnnSubCategoryGetData, { strCat: ANN_CATS[ann.cat][1], strPrevDate: ymd(since), strScrip: state.code,
+      strSearch: "P", strToDate: ymd(now), strType: "C", subcategory: ANN_CATS[ann.cat][2], pageno: String(p) })));
+    if (token !== ann.token) return; // another scrip, filter or load superseded this one
+    ann.busy = false;
+    const bad = res.find((r) => !r.ok);
+    if (bad) ann.error = bad.error;
+    else {
+      res.forEach((r) => ann.rows.push(...((r.data && r.data.Table) || [])));
+      ann.total = parseInt(g(res[0].data, "Table1.0.ROWCNT"), 10) || ann.rows.length;
+      ann.pages += pages.length;
+      if (!more) ann.x = ann.rows.length;
+    }
+    drawAnn();
+  }
+
   function renderScrip() {
     slots.length = 0;
     const R = state.res, D = (id) => g(R[id], "data");
@@ -412,9 +490,7 @@ details{margin:4px 0}summary{cursor:pointer}
           h("tr", {}, h("td", { class: "n" }, h("b", {}, d.TotalBQty)), h("td", {}, "total"), h("td", {}, "total"), h("td", { class: "n" }, h("b", {}, d.TotalSQty)))))),
       resultsCard,
       card("Flags and cautions", ["getScripHeaderData", "ScripwiseCautionaryMsg"], flags),
-      card("Announcements", NEWS, (d) => (Array.isArray(d) && d.length
-        ? h("table", {}, h("tbody", {}, ...d.map((n) => h("tr", {}, h("td", {}, n.Newsdt), h("td", {}, n.NewsSubj)))))
-        : h("p", { class: "muted" }, "None returned.")), "wide"),
+      h("section", { class: "card wide" }, h("h3", {}, "Announcements"), annBox),
       card("Peers (Rs Cr)", "EQPeerGp", (d) => {
         const cols = ["Name", "scrip_cd", "LTP", "Change", "PE", "PB", "EPS", "Revenue", "PAT", "OPM", "NPM", "w52hi", "w52lo", "Results_QuarterName"];
         return h("table", {}, h("thead", {}, h("tr", {}, ...cols.map((c) => h("th", {}, c === "Change" ? "Chg %" : c)))),
