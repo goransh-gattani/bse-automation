@@ -298,6 +298,7 @@ details{margin:4px 0}summary{cursor:pointer}
     finReset();
     consoleApi.refresh();
     openTab("scrip");
+    detectLatest(token);
   }
 
   // ---------------------------------------------------------------- Scrip tab
@@ -419,6 +420,8 @@ details{margin:4px 0}summary{cursor:pointer}
   const finQ = h("select", {});
   const finN = h("input", { type: "number", min: 1, max: 12, value: 5, style: "width:60px" });
   const finOut = h("div", {});
+  // note: "" (nothing to say), or what the background check found
+  const finNote = h("p", { class: "muted" });
   let finTable = null;
   const LINE = { sales: "Net Sales/Revenue From Operations", cmc: "Cost of Materials Consumed", purch: "Purchases of stock-in-trade",
     inv: "Changes in inventories of finished goods, work-in-progress and stock-in-trade", emp: "Employee benefit expense", oth: "Other Expenses",
@@ -426,18 +429,45 @@ details{margin:4px 0}summary{cursor:pointer}
 
   views.fin.append(
     h("p", { class: "muted" }, "Quarterly P&L from BSE's results page, as originally filed (later restatements are not applied). Expenses are negative. BSE labels these amounts Rs million; check the SEBI summary in the API console if a company reports differently."),
+    finNote,
     h("div", { class: "row" }, h("label", { class: "f" }, "Up to quarter", finQ), h("label", { class: "f" }, "How many", finN),
       h("button", { class: "primary", type: "button", onclick: () => loadFin() }, "Load"),
       h("button", { type: "button", onclick: () => finTable && saveFile(`bse_${state.code}_pnl.csv`, toCsv(finTable.rows, finTable.cols), "text/csv") }, "Download CSV")),
     finOut);
 
+  function fillQuarters(latest, tag, keep) { // keep: a quarter the person already picked
+    finQ.replaceChildren(...Array.from({ length: 16 }, (_, i) => latest - i).map((id) =>
+      h("option", { value: id.toFixed(2) }, idLabel(id) + (id === latest ? `  (${tag})` : ""))));
+    if (keep && [...finQ.options].some((o) => o.value === keep)) finQ.value = keep;
+  }
   function finReset() {
     const fromBse = isFinite(num(state.quarter));
-    const latest = fromBse ? Math.round(num(state.quarter)) : latestGuess();
-    finQ.replaceChildren(...Array.from({ length: 16 }, (_, i) => latest - i).map((id) =>
-      h("option", { value: id.toFixed(2) }, idLabel(id) + (id === latest ? (fromBse ? "  (latest on BSE)" : "  (latest ended)") : ""))));
+    finQ.value = "";
+    fillQuarters(fromBse ? Math.round(num(state.quarter)) : latestGuess(), fromBse ? "latest on BSE" : "latest ended");
+    finNote.textContent = state.code ? "Checking which quarter is latest…" : "";
     finTable = null;
     finOut.replaceChildren(h("p", { class: "muted" }, `Pick the latest quarter and how many to show, then press Load. Quarters BSE has no results for yet are skipped.`));
+  }
+
+  // Runs after a scrip loads, without blocking it: asks BSE for the few quarters around the
+  // expected latest one and keeps the newest that actually has results. This covers a stale or
+  // missing link on the results tab, and a new quarter filed before that link was updated.
+  async function detectLatest(token) {
+    const base = isFinite(num(state.quarter)) ? Math.round(num(state.quarter)) : latestGuess();
+    const ids = [base + 1, base, base - 1, base - 2, base - 3];
+    const out = await Promise.all(ids.map((q) => call(byId[DETAIL], { Scrip_cd: state.code, Qtr: q.toFixed(2) })));
+    if (token !== state.token) return; // another scrip was loaded meanwhile
+    const found = ids.filter((q, i) => out[i].ok && ((out[i].data || {}).table1 || []).length);
+    if (!found.length) {
+      finNote.textContent = out.every((r) => !r.ok) ? `Could not check the latest quarter (${out[0].error}). Using ${idLabel(base)}.` : "No results found for the last few quarters.";
+      return;
+    }
+    const latest = Math.max(...found);
+    state.quarter = latest.toFixed(2);
+    const picked = finQ.value === base.toFixed(2) ? "" : finQ.value; // untouched default moves to the new latest
+    fillQuarters(latest, "latest filed", picked);
+    const end = (((out[ids.indexOf(latest)].data || {}).table1 || []).find((x) => x.fld_desc === "Date End") || {}).Value;
+    finNote.textContent = `Latest filed quarter: ${endLabel(end) || idLabel(latest)}${end ? ` (ended ${end})` : ""}.`;
   }
 
   async function loadFin() {
