@@ -9,7 +9,7 @@ BSE blocks requests that don't come from a real browser on its own site, so the 
 1. In the repository on GitHub, open **Settings → Pages**.
 2. Under **Build and deployment**, set **Source** to *Deploy from a branch*, then **Branch** to `main` and folder `/docs`, and click **Save**.
 3. Wait a minute or two. The site is at https://goransh-gattani.github.io/bse-automation/ (the Pages settings page shows the link once it is live).
-4. Open that link and drag the **BSE Announcements** button to your bookmarks bar.
+4. Open that link: it opens the **BSE Explorer** (see below). The announcements lookup moved to `announcements.html`, and its bookmarklet install page is `bookmarklet.html`.
 5. Open https://www.bseindia.com/corporates/ann.html and click the bookmark.
 
 If the link shows this README instead of the app, Pages is publishing the repository root rather than `/docs`. The root `index.html` forwards to `docs/` so the app still opens, but setting the folder to `/docs` gives the shorter address.
@@ -36,7 +36,7 @@ Open http://localhost:8000. The script serves the page and proxies `/api` to BSE
 
 ## BSE Explorer on your computer
 
-`python3 proxy/local_proxy.py`, then open http://localhost:8000/explorer-app.html. The page is the same BSE Explorer as the bookmarklet (`docs/explorer.js`); on localhost it sends its calls to `/bse/<api|realtime|msource>/<path>` and the proxy forwards them to BSE with browser-like headers. `pip install curl_cffi` makes the proxy look like Chrome, which helps if BSE answers 403. Without a proxy, use the bookmarklet from `explorer.html` instead.
+`python3 proxy/local_proxy.py`, then open http://localhost:8000. The page is the same BSE Explorer as the bookmarklet (`docs/explorer.js`); on localhost it sends its calls to `/bse/<api|realtime|msource>/<path>` and the proxy forwards them to BSE with browser-like headers. `pip install curl_cffi` makes the proxy look like Chrome, which helps if BSE answers 403. Without a proxy, use the bookmarklet from `explorer.html` instead.
 
 ## Optional: the proxy version hosted (Cloudflare Worker)
 
@@ -49,7 +49,11 @@ Or with the CLI: `npx wrangler deploy proxy/cloudflare-worker.js --name bse-prox
 
 **Caveat:** BSE sometimes blocks requests from cloud and datacenter IPs, including Cloudflare's. If the worker URL returns an HTML error page or HTTP 403 while the local proxy works, BSE is blocking Cloudflare; keep using the local proxy (you can point the hosted page at it by setting its Proxy URL to `http://localhost:8000/api`).
 
-To use it, open https://goransh-gattani.github.io/bse-automation/index.html?proxy, expand **Parameters**, paste the worker URL into **Proxy URL**, and press **Fetch**. The page remembers it in your browser.
+To use it, open https://goransh-gattani.github.io/bse-automation/announcements.html?proxy, expand **Parameters**, paste the worker URL into **Proxy URL**, and press **Fetch**. The page remembers it in your browser.
+
+### BSE Explorer on GitHub Pages
+
+The Explorer is the front page of the hosted site (`explorer-app.html` forwards there). It sends its calls to the Cloudflare Worker (`/bse/<api|realtime|msource>/<path>`), so the Worker must be redeployed with the current `proxy/cloudflare-worker.js` (steps below). Use `?proxy=https://<your-worker>` to point at a different Worker; the page remembers it.
 
 ## Usage
 

@@ -1,7 +1,7 @@
 // Cloudflare Worker: same job as local_proxy.py's /api, for the hosted page.
 // Forwards the query string to BSE's announcements API with browser-like
-// headers and returns the reply with CORS headers. Only that one endpoint
-// is reachable. Set ALLOWED_ORIGIN (e.g. https://<you>.github.io) to stop
+// headers and returns the reply with CORS headers. Reachable: that endpoint,
+// /pdf, and the BSE Explorer's /bse/... paths. Set ALLOWED_ORIGIN (e.g. https://<you>.github.io) to stop
 // other sites from using your worker; leave it unset to allow any origin.
 
 const UPSTREAM = "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w";
@@ -23,6 +23,15 @@ const UPSTREAM_HEADERS = {
   "Sec-Fetch-Site": "same-site",
 };
 
+// BSE Explorer: /bse/<api|realtime|msource>/<path>?<query> goes to the matching BSE API.
+// Only these three BSE hosts and a plain path are accepted.
+const EXPLORER_BASES = {
+  api: "https://api.bseindia.com/BseIndiaAPI/api",
+  realtime: "https://api.bseindia.com/RealTimeBseIndiaAPI/api",
+  msource: "https://api.bseindia.com/MSource/1D",
+};
+const EXPLORER_PATH = /^\/bse\/(api|realtime|msource)\/([A-Za-z0-9_][A-Za-z0-9_./-]*)$/;
+
 function corsHeaders(env) {
   return {
     "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN || "*",
@@ -42,9 +51,14 @@ export default {
     // /pdf?name=<ATTACHMENTNAME>&filename=<save as>: the PDF as a download.
     if (pathname.replace(/\/+$/, "").endsWith("/pdf")) return downloadPdf(searchParams, cors);
 
+    let target = UPSTREAM + search;
+    const bse = EXPLORER_PATH.exec(pathname.replace(/\/+$/, ""));
+    if (bse && !pathname.includes("..")) target = `${EXPLORER_BASES[bse[1]]}/${bse[2]}${search}`;
+    else if (pathname.startsWith("/bse/")) return new Response("Not a BSE Explorer path", { status: 400, headers: cors });
+
     let upstream;
     try {
-      upstream = await fetch(UPSTREAM + search, { headers: UPSTREAM_HEADERS });
+      upstream = await fetch(target, { headers: UPSTREAM_HEADERS });
     } catch (err) {
       return new Response(`Proxy could not reach BSE: ${err}`, { status: 502, headers: cors });
     }

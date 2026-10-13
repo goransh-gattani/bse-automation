@@ -5,9 +5,13 @@
 (() => {
   "use strict";
 
-  // On localhost the page is served by proxy/local_proxy.py, which forwards /bse/... to BSE.
-  const LOCAL = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
-  if (!LOCAL && !/(^|\.)bseindia\.com$/.test(location.hostname)) {
+  // index.html sets window.BSE_EXPLORER_PROXY to a proxy that forwards /bse/... to BSE:
+  // "" = the local proxy serving the page (proxy/local_proxy.py), or a Cloudflare Worker URL.
+  // Without it the script only runs on a bseindia.com page, where BSE accepts the calls itself.
+  const VIA = window.BSE_EXPLORER_PROXY;
+  const PROXIED = typeof VIA === "string";
+  const LOCAL = PROXIED && VIA === "";
+  if (!PROXIED && !/(^|\.)bseindia\.com$/.test(location.hostname)) {
     alert("Open any page on www.bseindia.com first, then run this again.");
     location.href = "https://www.bseindia.com/";
     return;
@@ -125,7 +129,7 @@
 
   const fill = (params) => Object.fromEntries(Object.entries(params).map(([k, v]) => [k,
     v.replace(SC, state.code).replace(QT, state.quarter).replace(NM, state.name.replace(/\s+/g, "-"))]));
-  const buildUrl = (e, params) => `${LOCAL ? "/bse/" + e.base : BASES[e.base]}/${e.path}?` +
+  const buildUrl = (e, params) => `${PROXIED ? `${VIA}/bse/${e.base}` : BASES[e.base]}/${e.path}?` +
     Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
 
   // Never throws: failures come back as {ok:false, error} so each card can show its own.
@@ -136,7 +140,9 @@
       const res = await fetch(url);
       const text = await res.text();
       const out = { url, status: res.status, ms: Math.round(performance.now() - t0), bytes: text.length, text, ok: res.ok };
-      if (LOCAL && res.status === 404) return { ...out, ok: false, error: "This server has no BSE proxy (404). Stop it and run  python3 proxy/local_proxy.py  from the repo root, then reload this page." };
+      if (PROXIED && res.status === 404) return { ...out, ok: false, error: LOCAL
+        ? "This server has no BSE proxy (404). Stop it and run  python3 proxy/local_proxy.py  from the repo root, then reload this page."
+        : "The proxy does not know the BSE Explorer paths (404). Redeploy proxy/cloudflare-worker.js to your Worker, then reload." };
       if (!res.ok) return { ...out, error: `HTTP ${res.status}${res.status === 403 ? " (BSE refused the request)" : ""}: ${text.slice(0, 120)}` };
       try { out.data = unwrap(JSON.parse(text)); } catch { return { ...out, ok: false, error: `Not JSON: ${text.slice(0, 120)}` }; }
       return out;
@@ -234,7 +240,7 @@ details{margin:4px 0}summary{cursor:pointer}
   const form = h("form", { onsubmit: (ev) => { ev.preventDefault(); lookup(qBox.value.trim()); } }, qBox,
     h("button", { class: "primary", type: "submit" }, "Fetch"));
   root.append(h("div", { class: "panel" },
-    h("header", {}, h("strong", {}, "BSE Explorer"), form, LOCAL ? "" : h("button", { class: "x", type: "button", title: "Close", onclick: () => host.remove() }, "×")),
+    h("header", {}, h("strong", {}, "BSE Explorer"), form, PROXIED ? "" : h("button", { class: "x", type: "button", title: "Close", onclick: () => host.remove() }, "×")),
     h("nav", {}, ...TABS.map(([id]) => tabBtns[id])), status, picks, ...TABS.map(([id]) => views[id])));
   document.body.append(host);
 
@@ -404,7 +410,7 @@ details{margin:4px 0}summary{cursor:pointer}
     if (!name) return "—";
     const file = pdfFileName(row), url = PDF_BASE + encodeURIComponent(name);
     return [h("a", { href: url, target: "_blank", rel: "noopener" }, "📄 View"), " ",
-      LOCAL ? h("a", { href: `/api/pdf?name=${encodeURIComponent(name)}&filename=${encodeURIComponent(file)}`, download: file }, "⬇ Download")
+      PROXIED ? h("a", { href: `${LOCAL ? "/api" : VIA}/pdf?name=${encodeURIComponent(name)}&filename=${encodeURIComponent(file)}`, download: file }, "⬇ Download")
         : h("a", { href: url, download: file, onclick: savePdf }, "⬇ Download")];
   }
   function drawAnn() {

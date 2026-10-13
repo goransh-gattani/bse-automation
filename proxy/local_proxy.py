@@ -1,7 +1,7 @@
 """Local test server for the web app: serves docs/ and proxies /api to BSE.
 
     python3 proxy/local_proxy.py           # then open http://localhost:8000
-                                           # BSE Explorer: http://localhost:8000/explorer-app.html
+                                           # BSE Explorer: http://localhost:8000  (announcements tool: /announcements.html)
     python3 proxy/local_proxy.py --diag    # show how BSE answers each client
 
 Browsers can't call BSE's API directly (no CORS headers, and BSE rejects
@@ -251,8 +251,8 @@ def main():
         (args.host, args.port), partial(Handler, directory=str(DOCS_DIR))
     )
     names = ", ".join(name for name, _ in strategies())
-    print(f"Explorer: http://localhost:{args.port}/explorer-app.html")
-    print(f"Open http://localhost:{args.port}  (API proxy at /api, trying: {names}. Ctrl+C to stop)")
+    print(f"BSE Explorer: http://localhost:{args.port}   Announcements tool: http://localhost:{args.port}/announcements.html")
+    print(f"(API proxy at /api, trying: {names}. Ctrl+C to stop)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
