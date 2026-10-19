@@ -55,6 +55,28 @@ To use it, open https://goransh-gattani.github.io/bse-automation/announcements.h
 
 The Explorer is the front page of the hosted site (`explorer-app.html` forwards there). It sends its calls to the Cloudflare Worker (`/bse/<api|realtime|msource>/<path>`), so the Worker must be redeployed with the current `proxy/cloudflare-worker.js` (steps below). Use `?proxy=https://<your-worker>` to point at a different Worker; the page remembers it.
 
+## BSE in Claude (MCP server)
+
+`mcp/bse_mcp.py` gives Claude Desktop and Claude Code tools that pull live BSE data by scrip code: `search_scrips`, `get_quote`, `get_market_depth`, `get_peers`, `get_financials` (quarterly P&L with derived EBITDA/margins, quarters named like `Q1 FY27`), `get_announcements` (with PDF links), `download_announcement_pdf`, `list_scrips` and `call_bse_api` (any documented endpoint, raw). It runs on your computer because BSE blocks cloud IPs, and uses the same fetch strategies as `proxy/local_proxy.py`.
+
+```bash
+pip install mcp curl_cffi          # curl_cffi makes the requests look like Chrome to BSE (recommended)
+```
+
+Claude Code: `claude mcp add bse -- python3 /full/path/to/bse-automation/mcp/bse_mcp.py`
+
+Claude Desktop: add to `claude_desktop_config.json` (Settings → Developer → Edit Config), then restart the app:
+
+```json
+{
+  "mcpServers": {
+    "bse": { "command": "python3", "args": ["/full/path/to/bse-automation/mcp/bse_mcp.py"] }
+  }
+}
+```
+
+Then ask Claude things like "what did ABB India report last quarter?" or "list Reliance's filings in the last 3 months". If a tool answers "BSE refused the request (HTTP 403)", install `curl_cffi` or run `python3 proxy/local_proxy.py --diag` to see which client BSE accepts from your network.
+
 ## Usage
 
 1. Type or paste one or more scrip codes (e.g. `532942, 500325`, or one per line) and press **Fetch** or Enter. With several codes the page fetches them one after another and shows one combined table, newest first, with a **Scrip** column. The status line lists codes with no results, codes that have more pages, and codes that failed.
