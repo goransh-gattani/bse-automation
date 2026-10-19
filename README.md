@@ -57,13 +57,21 @@ The Explorer is the front page of the hosted site (`explorer-app.html` forwards 
 
 ## BSE in Claude (MCP server)
 
-`mcp/bse_mcp.py` gives Claude Desktop and Claude Code tools that pull live BSE data by scrip code: `search_scrips`, `get_quote`, `get_market_depth`, `get_peers`, `get_financials` (quarterly P&L with derived EBITDA/margins, quarters named like `Q1 FY27`), `get_announcements` (with PDF links), `download_announcement_pdf`, `list_scrips` and `call_bse_api` (any documented endpoint, raw). It runs on your computer because BSE blocks cloud IPs, and uses the same fetch strategies as `proxy/local_proxy.py`.
+Claude can pull live BSE data itself, as tools: `search_scrips`, `get_quote`, `get_market_depth`, `get_peers`, `get_financials` (quarterly P&L with derived EBITDA/margins, quarters named like `Q1 FY27`), `get_announcements` (with PDF links), `list_scrips` and `call_bse_api` (any documented endpoint, raw). There are two servers with the same tools:
+
+**Hosted, for claude.ai and Claude Code (the Cloudflare Worker).** The Worker in `proxy/cloudflare-worker.js` serves MCP at `/mcp`; it is the one piece of hosted compute here that BSE answers. After deploying the current Worker (see the Cloudflare section above):
+
+- claude.ai: **Settings → Connectors → Add custom connector**, URL `https://bse-proxy.goransh-gattani.workers.dev/mcp`, no authentication. Then enable it in a chat and ask, e.g. "what did ABB India report last quarter?".
+- Claude Code: `claude mcp add --transport http bse https://bse-proxy.goransh-gattani.workers.dev/mcp`
+
+Anyone with the URL can use the tools (BSE's data is public; the cost is your Worker's free quota). To restrict it, set a Worker variable `MCP_TOKEN`; the server then requires `Authorization: Bearer <token>` (Claude Code: add `--header "Authorization: Bearer <token>"`; claude.ai's custom connectors expect OAuth rather than a fixed token, so leave it unset for claude.ai).
+
+**Local, for Claude Desktop or Claude Code on your own computer (Python).** `mcp/bse_mcp.py` does the same over stdio and additionally has `download_announcement_pdf` (saves a filing to a folder). It uses your home IP, which BSE accepts more reliably than Cloudflare's.
 
 ```bash
 pip install mcp curl_cffi          # curl_cffi makes the requests look like Chrome to BSE (recommended)
+claude mcp add bse -- python3 /full/path/to/bse-automation/mcp/bse_mcp.py
 ```
-
-Claude Code: `claude mcp add bse -- python3 /full/path/to/bse-automation/mcp/bse_mcp.py`
 
 Claude Desktop: add to `claude_desktop_config.json` (Settings → Developer → Edit Config), then restart the app:
 
@@ -75,7 +83,7 @@ Claude Desktop: add to `claude_desktop_config.json` (Settings → Developer → 
 }
 ```
 
-Then ask Claude things like "what did ABB India report last quarter?" or "list Reliance's filings in the last 3 months". If a tool answers "BSE refused the request (HTTP 403)", install `curl_cffi` or run `python3 proxy/local_proxy.py --diag` to see which client BSE accepts from your network.
+If a tool answers "BSE refused the request (HTTP 403)", BSE is blocking that network: for the Worker, retry later or use the local server; for the local server, install `curl_cffi` or run `python3 proxy/local_proxy.py --diag`.
 
 ## Usage
 
