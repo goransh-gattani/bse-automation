@@ -530,6 +530,12 @@ details{margin:4px 0}summary{cursor:pointer}
     const m = /^\d+-(\w{3})-(\d{2})$/.exec(end || "");
     return m && MONTHS.includes(m[1]) ? fyLabel(2000 + +m[2], MONTHS.indexOf(m[1])) : "";
   };
+  // A quarter's rows from Corp_detailedResult_Transpose_ng, or [] when it isn't filed: BSE answers an
+  // unfiled quarter with the meta rows only (Header "2"), all empty, which must not count as a quarter.
+  const filedRows = (r) => {
+    const rows = (r && r.ok && r.data && r.data.table1) || [];
+    return rows.some((x) => x.Header !== "2" && isFinite(num(x.Value))) ? rows : [];
+  };
   const latestGuess = () => { // the last quarter that has ended, when BSE's results link gave none
     const now = new Date();
     return 126 + Math.floor((now.getFullYear() * 12 + now.getMonth() - 1 - (2025 * 12 + 5)) / 3);
@@ -577,7 +583,7 @@ details{margin:4px 0}summary{cursor:pointer}
     const ids = [base + 1, base, base - 1, base - 2, base - 3];
     const out = await Promise.all(ids.map((q) => call(byId[DETAIL], { Scrip_cd: state.code, Qtr: q.toFixed(2) })));
     if (token !== state.token) return; // another scrip was loaded meanwhile
-    const found = ids.filter((q, i) => out[i].ok && ((out[i].data || {}).table1 || []).length);
+    const found = ids.filter((q, i) => filedRows(out[i]).length);
     if (!found.length) {
       finNote.textContent = out.every((r) => !r.ok) ? `Could not check the latest quarter (${out[0].error}). Using ${idLabel(base)}.` : "No results found for the last few quarters.";
       return;
@@ -615,7 +621,7 @@ details{margin:4px 0}summary{cursor:pointer}
     const cols = [];
     out.forEach((r, i) => {
       if (!r) return;
-      const rows = (r.ok && r.data.table1) || [];
+      const rows = filedRows(r);
       if (!rows.length) return;
       const meta = (k) => (rows.find((x) => x.fld_desc === k) || {}).Value;
       cols.push({ q: ids[i], end: meta("Date End"), type: meta("Type"),
@@ -660,7 +666,7 @@ details{margin:4px 0}summary{cursor:pointer}
       if (token === finToken) draw(); // a newer Load or another scrip makes this one stale
     }));
     if (token === finToken && more) { // a whole batch of answered-but-empty quarters means we ran past the first filing
-      finDone = out.slice(from).every((r) => r && r.ok && !((r.data || {}).table1 || []).length);
+      finDone = out.slice(from).every((r) => r && r.ok && !filedRows(r).length);
       draw();
     }
   }
